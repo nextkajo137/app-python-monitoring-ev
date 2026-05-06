@@ -2,6 +2,7 @@ import os
 import time
 import random
 import sqlite3
+import requests
 from datetime import datetime
 from typing import Dict, Any, List
 
@@ -485,17 +486,24 @@ def index():
 # API UNTUK DASHBOARD
 # =========================
 
+
 @app.route("/api/live")
 def api_live():
-    live = get_live_state()
+    try:
+        response = requests.get("http://127.0.0.1:1880/api/charger/live")
 
-    # Kalau belum ada data dari Node-RED dan status masih idle,
-    # kita boleh hidupkan dummy agar dashboard tidak kosong.
-    if live.get("source") == "init":
-        payload = generate_dummy_payload()
-        live = update_live_from_payload(payload)
+        if response.status_code == 200:
+            data = response.json()
+            return jsonify(data)
 
-    return jsonify(live)
+        return jsonify({
+            "error": "Node-RED API gagal"
+        }), 500
+
+    except Exception as e:
+        return jsonify({
+            "error": str(e)
+        }), 500
 
 
 @app.route("/api/history")
@@ -535,78 +543,20 @@ def api_ingest():
 @app.route("/api/control", methods=["POST"])
 def api_control():
     payload = request.get_json(silent=True) or {}
-    action = str(payload.get("action", "")).lower().strip()
 
-    live = get_live_state()
+    try:
+        response = requests.post(
+            "http://127.0.0.1:1880/api/charger/control",
+            json=payload
+        )
 
-    if action == "start":
-        new_payload = {
-            "source": "manual-control",
-            "status": "charging",
-            "level_percent": live.get("level_percent", 20),
-            "charger_power_kw": live.get("charger_power_kw", 0),
-            "charger_voltage_v": live.get("charger_voltage_v", 0),
-            "pln_voltage_v": live.get("pln_voltage_v", 0),
-        }
+        return jsonify(response.json())
 
-        data = update_live_from_payload(new_payload)
-        return jsonify(data)
-
-    if action == "pause":
-        new_payload = {
-            "source": "manual-control",
-            "status": "paused",
-            "level_percent": live.get("level_percent", 0),
-            "charger_power_kw": 0,
-            "charger_voltage_v": live.get("charger_voltage_v", 0),
-            "pln_voltage_v": live.get("pln_voltage_v", 0),
-        }
-
-        data = update_live_from_payload(new_payload)
-        return jsonify(data)
-
-    if action == "reset":
-        conn = db_conn()
-        cur = conn.cursor()
-
-        cur.execute("""
-            UPDATE live_state
-            SET
-                source = ?,
-                status = ?,
-                level_percent = ?,
-                charger_power_kw = ?,
-                charger_voltage_v = ?,
-                pln_voltage_v = ?,
-                cycle_energy_kwh = ?,
-                cycle_cost_rp = ?,
-                cycle_started_at = ?,
-                last_update = ?,
-                last_update_ts = ?
-            WHERE id = 1
-        """, (
-            "manual-reset",
-            "idle",
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            now_str(),
-            now_str(),
-            time.time()
-        ))
-
-        conn.commit()
-        conn.close()
-
-        return jsonify(get_live_state())
-
-    return jsonify({
-        "ok": False,
-        "message": "Action tidak dikenal"
-    }), 400
+    except Exception as e:
+        return jsonify({
+            "ok": False,
+            "error": str(e)
+        }), 500
 
 
 # =========================

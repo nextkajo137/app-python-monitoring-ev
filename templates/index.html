@@ -108,7 +108,7 @@
             <span>Biaya Siklus Charging Saat Ini</span>
             <strong id="cycleCost">Rp 0</strong>
             <small>
-              Tarif dummy: Rp {{ '{:,.0f}'.format(tariff).replace(',', '.') }}/kWh
+              Tarif: Rp {{ '{:,.0f}'.format(tariff).replace(',', '.') }}/kWh
             </small>
           </div>
 
@@ -177,7 +177,7 @@
           <div class="summary-card glass">
             <p class="eyebrow">Tarif</p>
             <h3>Rp {{ '{:,.0f}'.format(tariff).replace(',', '.') }}</h3>
-            <span>per kWh, bisa diubah pada .env</span>
+            <span>per kWh</span>
           </div>
         </div>
       </section>
@@ -205,7 +205,6 @@
       </section>
     </main>
   </div>
-
-  <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+ <script src="{{ url_for('static', filename='js/app.js') }}"></script>
 </body>
 </html>

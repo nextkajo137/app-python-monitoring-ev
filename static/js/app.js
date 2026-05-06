@@ -291,3 +291,6 @@ refreshSummary();
 setInterval(refreshLive, 1000);
 setInterval(refreshSummary, 2500);
 setInterval(refreshHistory, 5000);
+setInterval(async () => {
+    await fetch('/api/dummy-push')
+}, 3000)

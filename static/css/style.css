@@ -303,7 +303,7 @@ p {
 
 .topbar h2 {
   max-width: 900px;
-  font-size: clamp(24px, 3.4vw, 42px);
+  font-size: clamp(24px, 3.4vw, 40px);
   line-height: 1.08;
   letter-spacing: -0.065em;
   background: linear-gradient(90deg, #ffffff, #a9f7ff, #d8c4ff);
@@ -314,7 +314,7 @@ p {
 .top-actions {
   display: flex;
   gap: 10px;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
 }
 
 .btn {
@@ -502,6 +502,7 @@ p {
   font-weight: 800;
   position: relative;
   z-index: 1;
+  font-size: 13px;
 }
 
 .metric-card {
@@ -629,7 +630,7 @@ p {
 }
 
 .summary-card h3 {
-  font-size: clamp(34px, 5vw, 62px);
+  font-size: clamp(34px, 5vw, 45px);
   letter-spacing: -0.075em;
   line-height: 1;
   position: relative;
