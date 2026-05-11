@@ -179,21 +179,34 @@ function renderLive(data) {
 
 function renderHistory(items) {
   if (!items || !items.length) {
-    els.historyTable.innerHTML = '<tr><td colspan="7">Belum ada data riwayat.</td></tr>';
+    els.historyTable.innerHTML = '<tr><td colspan="7" style="text-align: center; color: #8ea2bd;">Belum ada data riwayat.</td></tr>';
     return;
   }
 
-  els.historyTable.innerHTML = items.map(item => `
+  els.historyTable.innerHTML = items.map(item => {
+    let badgeColor = '#6c757d'; // Default
+    const statusLower = (item.status || '').toLowerCase();
+    
+    if (statusLower === 'completed') badgeColor = '#10b981';
+    else if (statusLower === 'charging') badgeColor = '#3b82f6';
+    else if (statusLower === 'paused') badgeColor = '#f59e0b';
+    else if (statusLower === 'error') badgeColor = '#ef4444';
+
+    return `
     <tr>
-      <td>${item.cycle_id || '-'}</td>
+      <td style="font-weight: bold;">${item.cycle_id || '-'}</td>
       <td>${item.started_at || '-'}</td>
       <td>${item.ended_at || '-'}</td>
       <td>${item.duration_min ?? 0} menit</td>
       <td>${Number(item.energy_kwh || 0).toFixed(3)} kWh</td>
       <td>${fmtRp.format(Number(item.cost_rp || 0))}</td>
-      <td><span class="status-pill">${item.status || '-'}</span></td>
+      <td>
+        <span style="background-color: ${badgeColor}; color: white; padding: 4px 10px; border-radius: 12px; font-size: 0.85em; font-weight: 500; text-transform: uppercase;">
+          ${statusLower || '-'}
+        </span>
+      </td>
     </tr>
-  `).join('');
+  `}).join('');
 }
 
 function renderSummary(data) {
@@ -267,6 +280,10 @@ async function control(action) {
   refreshHistory();
 }
 
+function downloadCSVReport() {
+    window.open('/api/export/csv', '_blank');
+}
+
 document.querySelectorAll('.nav-link').forEach(btn => {
   btn.addEventListener('click', () => {
     document.querySelectorAll('.nav-link').forEach(x => x.classList.remove('active'));
@@ -280,9 +297,19 @@ document.querySelectorAll('.nav-link').forEach(btn => {
   });
 });
 
-document.getElementById('btnStart').addEventListener('click', () => control('start'));
-document.getElementById('btnPause').addEventListener('click', () => control('pause'));
-document.getElementById('btnReset').addEventListener('click', () => control('reset'));
+const btnStart = document.getElementById('btnStart');
+if (btnStart) btnStart.addEventListener('click', () => control('start'));
+
+const btnPause = document.getElementById('btnPause');
+if (btnPause) btnPause.addEventListener('click', () => control('pause'));
+
+const btnReset = document.getElementById('btnReset');
+if (btnReset) btnReset.addEventListener('click', () => control('reset'));
+
+const btnExport = document.getElementById('btnExportCSV');
+if (btnExport) {
+    btnExport.addEventListener('click', downloadCSVReport);
+}
 
 refreshLive();
 refreshHistory();
@@ -291,6 +318,3 @@ refreshSummary();
 setInterval(refreshLive, 1000);
 setInterval(refreshSummary, 2500);
 setInterval(refreshHistory, 5000);
-setInterval(async () => {
-    await fetch('/api/dummy-push')
-}, 3000)

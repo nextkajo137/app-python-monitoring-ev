@@ -69,7 +69,7 @@
                 <h3 id="statusLabel">Sedang Charging</h3>
               </div>
 
-              <span id="sourceBadge" class="badge">local-dummy</span>
+              <span id="sourceBadge" class="badge" style="white-space: nowrap; display: inline-block; padding: 4px 10px;">local-dummy</span>
             </div>
 
             <div class="ring-wrap">
@@ -133,11 +133,12 @@
 
       <section id="page-history" class="page">
         <div class="glass table-card">
-          <div class="section-head">
+          <div class="section-head" style="display: flex; justify-content: space-between; align-items: center;">
             <div>
               <p class="eyebrow">Log Siklus</p>
               <h3>Riwayat Charging</h3>
             </div>
+            <button id="btnExportCSV" class="btn primary">Download CSV</button>
           </div>
 
           <div class="table-wrap">
