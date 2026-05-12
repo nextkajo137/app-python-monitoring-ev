@@ -1,0 +1,234 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>EV Charger Power Monitoring</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+
+  <link
+    href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap"
+    rel="stylesheet"
+  >
+
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+
+<body>
+  <div class="aurora aurora-a"></div>
+  <div class="aurora aurora-b"></div>
+
+  <div class="shell">
+    <aside class="sidebar glass">
+      <div class="brand">
+        <div class="brand-icon">⚡</div>
+        <div>
+          <h1>EV Charge</h1>
+          <p>Python + Node-RED API</p>
+        </div>
+      </div>
+
+      <nav class="menu">
+        <button class="nav-link active" data-page="dashboard">Dashboard</button>
+        <button class="nav-link" data-page="history">Riwayat Charging</button>
+        <button class="nav-link" data-page="cost">Total Biaya Konsumsi</button>
+        <button class="nav-link" data-page="kwh">Total kWh Charging</button>
+      </nav>
+
+      <div class="node-card">
+        <span>Node-RED API</span>
+        <strong>{{ node_red_url }}</strong>
+        <small>Fallback dummy aktif jika API belum jalan.</small>
+      </div>
+    </aside>
+
+    <main class="content">
+      <header class="topbar glass">
+        <div>
+          <p class="eyebrow">Live Monitoring</p>
+          <h2>Dashboard Penggunaan Daya Charger Mobil Listrik</h2>
+        </div>
+      </header>
+
+      <section id="page-dashboard" class="page active">
+
+        <div class="dashboard-actions">
+          <button id="btnStart" class="btn primary">Start</button>
+          <button id="btnPause" class="btn">Pause</button>
+          <button id="btnReset" class="btn danger">Reset</button>
+        </div>
+
+        <div class="hero-grid">
+          <div class="status-panel glass">
+            <div class="status-head">
+              <div>
+                <p class="eyebrow">Status Level</p>
+                <h3 id="statusLabel">Sedang Charging</h3>
+              </div>
+
+              <span id="sourceBadge" class="badge" style="white-space: nowrap; display: inline-block; padding: 4px 10px;">local-dummy</span>
+            </div>
+
+            <div class="ring-wrap">
+              <div id="levelRing" class="level-ring" style="--level: 0deg">
+                <div class="ring-inner">
+                  <span id="levelText">0%</span>
+                  <small>Battery Level</small>
+                </div>
+              </div>
+            </div>
+
+            <div class="live-time">
+              Update: <span id="lastUpdate">-</span>
+            </div>
+          </div>
+
+          <div class="metric-card glass accent-blue">
+            <span>Daya Charger Berjalan</span>
+            <strong><b id="powerKw">0.00</b> kW</strong>
+            <small><span id="powerW">0</span> Watt</small>
+          </div>
+
+          <div class="metric-card glass accent-green">
+            <span>Tegangan Charger</span>
+            <strong><b id="chargerVoltage">0</b> V</strong>
+            <small>Tegangan output/source charger</small>
+          </div>
+
+          <div class="metric-card glass accent-purple">
+            <span>Tegangan Sumber PLN</span>
+            <strong><b id="plnVoltage">0</b> V</strong>
+            <small>Monitoring supply AC PLN</small>
+          </div>
+
+          <div class="metric-card glass accent-gold wide">
+            <span>Biaya Siklus Charging Saat Ini</span>
+            <strong id="cycleCost">Rp 0</strong>
+            <small>
+              Tarif: Rp {{ '{:,.0f}'.format(tariff).replace(',', '.') }}/kWh
+            </small>
+          </div>
+
+          <div class="metric-card glass accent-cyan wide">
+            <span>Energi Siklus Charging Saat Ini</span>
+            <strong><b id="cycleEnergy">0.000</b> kWh</strong>
+            <small>Akumulasi sejak siklus dimulai</small>
+          </div>
+        </div>
+
+        <div class="chart-card glass">
+          <div class="section-head">
+            <div>
+              <p class="eyebrow">Realtime Trend</p>
+              <h3>Grafik Daya dan Tegangan Berjalan</h3>
+            </div>
+          </div>
+
+          <canvas id="liveChart" height="110"></canvas>
+        </div>
+      </section>
+
+      <section id="page-history" class="page">
+        <div class="glass table-card">
+          <div class="section-head" style="display: flex; justify-content: space-between; align-items: center;">
+            <div>
+              <p class="eyebrow">Log Siklus</p>
+              <h3>Riwayat Charging</h3>
+            </div>
+            <button id="btnExportCSV" class="btn primary">Download CSV</button>
+          </div>
+
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>ID Siklus</th>
+                  <th>Mulai</th>
+                  <th>Selesai</th>
+                  <th>Durasi</th>
+                  <th>Energi</th>
+                  <th>Biaya</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+
+              <tbody id="historyTable"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+     <section id="page-cost" class="page">
+        <div class="glass table-card">
+
+          <div class="section-head">
+            <div>
+              <p class="eyebrow">Konsumsi Biaya</p>
+              <h3>Total Biaya Charging</h3> <br>
+            </div>
+          </div>
+
+          <div class="summary-grid">
+            <div class="summary-card glass big-number">
+              <p class="eyebrow">Total Biaya Konsumsi</p>
+              <h3 id="totalCost">Rp 0</h3>
+              <span>Total akumulasi seluruh charging</span>
+            </div>
+
+            <div class="summary-card glass">
+              <p class="eyebrow">Biaya Siklus Aktif</p>
+              <h3 id="activeCycleCost">Rp 0</h3>
+              <span>Sedang digunakan saat proses charging</span>
+            </div>
+
+            <div class="summary-card glass">
+              <p class="eyebrow">Tarif</p>
+              <h3>Rp {{ '{:,.0f}'.format(tariff).replace(',', '.') }}</h3>
+              <span>per kWh</span>
+            </div>
+          </div>
+
+        </div>
+      </section>
+
+     <section id="page-kwh" class="page">
+        <div class="glass table-card">
+
+          <div class="section-head">
+            <div>
+              <p class="eyebrow">Energi Charging</p>
+              <h3>Total kWh Charging</h3> <br>
+            </div>
+          </div>
+
+          <div class="summary-grid">
+            <div class="summary-card glass big-number">
+              <p class="eyebrow">Total kWh Charging</p>
+              <h3><span id="totalKwh">0.000</span> kWh</h3>
+              <span>Energi total seluruh pemakaian charger</span>
+            </div>
+
+            <div class="summary-card glass">
+              <p class="eyebrow">kWh Siklus Aktif</p>
+              <h3><span id="activeKwh">0.000</span> kWh</h3>
+              <span>Akumulasi saat charging berjalan</span>
+            </div>
+
+            <div class="summary-card glass">
+              <p class="eyebrow">Jumlah Siklus Selesai</p>
+              <h3 id="totalCycles">0</h3>
+              <span>Data dari riwayat charging</span>
+            </div>
+          </div>
+
+        </div>
+      </section>
+    </main>
+  </div>
+ <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+</body>
+</html>
