@@ -177,6 +177,7 @@ function renderLive(data) {
   addChartPoint(data);
 }
 
+let allHistory = [];
 function renderHistory(items) {
   if (!items || !items.length) {
     els.historyTable.innerHTML = '<tr><td colspan="7" style="text-align: center; color: #8ea2bd;">Belum ada data riwayat.</td></tr>';
@@ -207,6 +208,21 @@ function renderHistory(items) {
       </td>
     </tr>
   `}).join('');
+}
+
+function filterHistoryByDate() {
+  const selectedDate = document.getElementById('filterDate')?.value;
+
+  if (!selectedDate) {
+    renderHistory(allHistory);
+    return;
+  }
+
+  const filtered = allHistory.filter(item => {
+    return item.started_at?.startsWith(selectedDate);
+  });
+
+  renderHistory(filtered);
 }
 
 function renderSummary(data) {
@@ -250,21 +266,39 @@ async function refreshLive() {
 
 async function refreshHistory() {
   try {
+
     const data = await getJson('/api/history');
-    renderHistory(data.items || data.history || []);
+
+    allHistory = data.items || data.history || [];
+
+    const selectedDate =
+      document.getElementById('filterDate')?.value;
+
+    if (selectedDate) {
+
+      const filtered = allHistory.filter(item => {
+        if (!item.started_at) return false;
+
+        return item.started_at.startsWith(selectedDate);
+      });
+
+      renderHistory(filtered);
+
+    } else {
+
+      renderHistory(allHistory);
+
+    }
+
   } catch (err) {
     console.error(err);
   }
 }
 
-async function refreshSummary() {
-  try {
-    const data = await getJson('/api/summary');
-    renderSummary(data);
-  } catch (err) {
-    console.error(err);
-  }
-}
+async function refreshSummary() { 
+  try { 
+    const data = await getJson('/api/summary'); renderSummary(data); 
+  } catch (err) { console.error(err); } }
 
 async function control(action) {
   const data = await getJson('/api/control', {
@@ -281,7 +315,17 @@ async function control(action) {
 }
 
 function downloadCSVReport() {
-    window.open('/api/export/csv', '_blank');
+
+  const selectedDate =
+    document.getElementById('filterDate')?.value;
+
+  let url = '/api/export/csv';
+
+  if (selectedDate) {
+    url += `?date=${selectedDate}`;
+  }
+
+  window.open(url, '_blank');
 }
 
 document.querySelectorAll('.nav-link').forEach(btn => {
@@ -309,6 +353,25 @@ if (btnReset) btnReset.addEventListener('click', () => control('reset'));
 const btnExport = document.getElementById('btnExportCSV');
 if (btnExport) {
     btnExport.addEventListener('click', downloadCSVReport);
+}
+const btnFilter = document.getElementById('btnFilter');
+
+if (btnFilter) {
+  btnFilter.addEventListener('click', filterHistoryByDate);
+}
+
+const btnResetFilter = document.getElementById('btnResetFilter');
+
+if (btnResetFilter) {
+  btnResetFilter.addEventListener('click', () => {
+    const filterInput = document.getElementById('filterDate');
+
+    if (filterInput) {
+      filterInput.value = '';
+    }
+
+    renderHistory(allHistory);
+  });
 }
 
 refreshLive();

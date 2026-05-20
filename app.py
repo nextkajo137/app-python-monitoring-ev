@@ -524,28 +524,73 @@ def api_summary():
 
 @app.route("/api/export/csv")
 def api_export_csv():
+
+    selected_date = request.args.get("date")
+
     conn = db_conn()
     cur = conn.cursor()
-    cur.execute("""
-        SELECT cycle_id, started_at, ended_at, duration_min, energy_kwh, cost_rp, status
-        FROM charging_history
-        ORDER BY id DESC
-    """)
+
+    if selected_date:
+        cur.execute("""
+            SELECT cycle_id, started_at, ended_at,
+                   duration_min, energy_kwh,
+                   cost_rp, status
+            FROM charging_history
+            WHERE started_at LIKE ?
+            ORDER BY id DESC
+        """, (f"{selected_date}%",))
+
+    else:
+        cur.execute("""
+            SELECT cycle_id, started_at, ended_at,
+                   duration_min, energy_kwh,
+                   cost_rp, status
+            FROM charging_history
+            ORDER BY id DESC
+        """)
+
     rows = cur.fetchall()
     conn.close()
 
     output = io.StringIO()
+
     writer = csv.writer(output)
-    writer.writerow(['ID Siklus', 'Waktu Mulai', 'Waktu Selesai', 'Durasi (Menit)', 'Energi (kWh)', 'Biaya (Rp)', 'Status'])
+
+    writer.writerow([
+        'ID Siklus',
+        'Waktu Mulai',
+        'Waktu Selesai',
+        'Durasi (Menit)',
+        'Energi (kWh)',
+        'Biaya (Rp)',
+        'Status'
+    ])
 
     for row in rows:
         writer.writerow([
-            row['cycle_id'], row['started_at'], row['ended_at'],
-            row['duration_min'], row['energy_kwh'], row['cost_rp'], str(row['status']).upper()
+            row['cycle_id'],
+            row['started_at'],
+            row['ended_at'],
+            row['duration_min'],
+            row['energy_kwh'],
+            row['cost_rp'],
+            str(row['status']).upper()
         ])
 
-    response = Response(output.getvalue(), mimetype="text/csv")
-    response.headers["Content-Disposition"] = "attachment; filename=riwayat_charging.csv"
+    response = Response(
+        output.getvalue(),
+        mimetype="text/csv"
+    )
+
+    filename = "riwayat_charging.csv"
+
+    if selected_date:
+        filename = f"riwayat_charging_{selected_date}.csv"
+
+    response.headers[
+        "Content-Disposition"
+    ] = f"attachment; filename={filename}"
+
     return response
 
 # =========================

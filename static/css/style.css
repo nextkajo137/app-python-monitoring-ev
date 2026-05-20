@@ -777,4 +777,43 @@ tr:hover td {
   .ring-inner span {
     font-size: 46px;
   }
+
+}
+
+  .history-filter{
+  display:flex;
+  gap:12px;
+  flex-wrap:wrap;
+}
+
+.history-filter input{
+  background:#111827;
+  border:1px solid rgba(0, 234, 255, 0.38);
+  color:white;
+  padding:10px 14px;
+  border-radius:12px;
+}
+
+input[type="date"]::-webkit-calendar-picker-indicator {
+  filter:
+    invert(1)
+    sepia(1)
+    saturate(5)
+    hue-rotate(140deg)
+    brightness(1.4);
+
+  cursor: pointer;
+
+  opacity: 1;
+
+  transition: 0.3s ease;
+
+  filter:
+    drop-shadow(0 0 4px #00eaff)
+    drop-shadow(0 0 8px #00eaff)
+    invert(1)
+    sepia(1)
+    saturate(5)
+    hue-rotate(140deg)
+    brightness(1.4);
 }
