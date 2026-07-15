@@ -1,0 +1,12 @@
+{% extends 'base.html' %}
+{% block title %}Data API Publik{% endblock %}
+{% block content %}
+<h3>Data dari API Publik (Node-RED)</h3>
+{% if error %}<div class="alert alert-warning">Gagal mengambil sebagian data: {{ error }}</div>{% endif %}
+<h5 class="mt-4">Live Data</h5>
+<pre class="bg-light p-3">{{ live_data }}</pre>
+<h5 class="mt-4">Summary</h5>
+<pre class="bg-light p-3">{{ summary_data }}</pre>
+<h5 class="mt-4">History (dari Node-RED)</h5>
+<pre class="bg-light p-3">{{ history_data }}</pre>
+{% endblock %}

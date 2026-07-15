@@ -179,21 +179,48 @@ function renderLive(data) {
 
 function renderHistory(items) {
   if (!items || !items.length) {
-    els.historyTable.innerHTML = '<tr><td colspan="7">Belum ada data riwayat.</td></tr>';
+    els.historyTable.innerHTML = '<tr><td colspan="8">Belum ada data riwayat.</td></tr>';
     return;
   }
 
-  els.historyTable.innerHTML = items.map(item => `
-    <tr>
-      <td>${item.cycle_id || '-'}</td>
-      <td>${item.started_at || '-'}</td>
-      <td>${item.ended_at || '-'}</td>
-      <td>${item.duration_min ?? 0} menit</td>
-      <td>${Number(item.energy_kwh || 0).toFixed(3)} kWh</td>
-      <td>${fmtRp.format(Number(item.cost_rp || 0))}</td>
-      <td><span class="status-pill">${item.status || '-'}</span></td>
-    </tr>
-  `).join('');
+  els.historyTable.innerHTML = items.map(item => {
+    const isManual = item.source === 'manual';
+
+    const actions = isManual
+      ? `<button type="button" class="btn-mini" onclick="openEditModal(${item.id})">Edit</button>
+         <button type="button" class="btn-mini btn-mini-danger" onclick="hapusManual(${item.id})">Hapus</button>`
+      : '<span class="badge-auto">Otomatis</span>';
+
+    return `
+      <tr>
+        <td>${item.cycle_id || '-'}</td>
+        <td>${item.started_at || '-'}</td>
+        <td>${item.ended_at || '-'}</td>
+        <td>${item.duration_min ?? 0} menit</td>
+        <td>${Number(item.energy_kwh || 0).toFixed(3)} kWh</td>
+        <td>${fmtRp.format(Number(item.cost_rp || 0))}</td>
+        <td><span class="status-pill">${item.status || '-'}</span></td>
+        <td>${actions}</td>
+      </tr>
+    `;
+  }).join('');
+}
+async function hapusManual(id) {
+  if (!confirm('Yakin hapus data ini?')) return;
+
+  try {
+    const res = await fetch(`/charging/delete/${id}`, { method: 'POST' });
+    const result = await res.json();
+
+    if (result.ok) {
+      refreshHistory();
+    } else {
+      alert(result.error || 'Gagal menghapus data');
+    }
+  } catch (err) {
+    console.error(err);
+    alert('Terjadi kesalahan saat menghapus data');
+  }
 }
 
 function renderSummary(data) {
@@ -284,6 +311,13 @@ document.getElementById('btnStart').addEventListener('click', () => control('sta
 document.getElementById('btnPause').addEventListener('click', () => control('pause'));
 document.getElementById('btnReset').addEventListener('click', () => control('reset'));
 
+const urlParams = new URLSearchParams(window.location.search);
+const initialTab = urlParams.get('tab');
+if (initialTab) {
+  const targetBtn = document.querySelector(`.nav-link[data-page="${initialTab}"]`);
+  if (targetBtn) targetBtn.click();
+}
+
 refreshLive();
 refreshHistory();
 refreshSummary();
@@ -294,3 +328,125 @@ setInterval(refreshHistory, 5000);
 setInterval(async () => {
     await fetch('/api/dummy-push')
 }, 3000)
+
+// =========================
+// MODAL CRUD DATA MANUAL
+// =========================
+
+const modalOverlay = document.getElementById('chargingModalOverlay');
+const chargingForm = document.getElementById('chargingForm');
+const modalError = document.getElementById('modalError');
+
+function openAddModal() {
+  chargingForm.reset();
+  document.getElementById('chargingId').value = '';
+  document.getElementById('modalTitle').textContent = 'Tambah Data Charging Manual';
+  document.getElementById('formDuration').value = '';
+  modalError.textContent = '';
+  modalOverlay.classList.add('active');
+}
+
+async function openEditModal(id) {
+  try {
+    const res = await fetch(`/charging/item/${id}`);
+    const result = await res.json();
+
+    if (!result.ok) {
+      alert(result.error || 'Gagal memuat data');
+      return;
+    }
+
+    const item = result.item;
+    document.getElementById('chargingId').value = id;
+    document.getElementById('modalTitle').textContent = 'Edit Data Charging Manual';
+    document.getElementById('formStartedAt').value = item.started_at ? item.started_at.replace(' ', 'T').slice(0, 16) : '';
+    document.getElementById('formEndedAt').value = item.ended_at ? item.ended_at.replace(' ', 'T').slice(0, 16) : '';
+    document.getElementById('formEnergy').value = item.energy_kwh;
+    document.getElementById('formCost').value = item.cost_rp;
+    document.getElementById('formStatus').value = item.status;
+    updateDurationPreview();
+    modalError.textContent = '';
+    modalOverlay.classList.add('active');
+  } catch (err) {
+    console.error(err);
+    alert('Terjadi kesalahan saat memuat data');
+  }
+}
+
+function closeChargingModal() {
+  modalOverlay.classList.remove('active');
+}
+
+function updateDurationPreview() {
+  const startVal = document.getElementById('formStartedAt').value;
+  const endVal = document.getElementById('formEndedAt').value;
+  const durationEl = document.getElementById('formDuration');
+
+  if (!startVal || !endVal) {
+    durationEl.value = '';
+    return;
+  }
+
+  const diffMin = Math.round((new Date(endVal) - new Date(startVal)) / 60000);
+  durationEl.value = diffMin >= 0 ? `${diffMin} menit` : 'Waktu selesai sebelum waktu mulai';
+}
+
+document.getElementById('formStartedAt').addEventListener('change', updateDurationPreview);
+document.getElementById('formEndedAt').addEventListener('change', updateDurationPreview);
+
+document.getElementById('btnAddManual').addEventListener('click', openAddModal);
+document.getElementById('btnCloseModal').addEventListener('click', closeChargingModal);
+document.getElementById('btnCancelModal').addEventListener('click', closeChargingModal);
+
+chargingForm.addEventListener('submit', async (e) => {
+  e.preventDefault();
+
+  const id = document.getElementById('chargingId').value;
+  const payload = {
+    started_at: document.getElementById('formStartedAt').value,
+    ended_at: document.getElementById('formEndedAt').value,
+    energy_kwh: document.getElementById('formEnergy').value,
+    cost_rp: document.getElementById('formCost').value,
+    status: document.getElementById('formStatus').value
+  };
+
+  const url = id ? `/charging/edit/${id}` : '/charging/add';
+
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    const result = await res.json();
+
+    if (!result.ok) {
+      modalError.textContent = result.error || 'Gagal menyimpan data';
+      return;
+    }
+
+    closeChargingModal();
+    refreshHistory();
+  } catch (err) {
+    console.error(err);
+    modalError.textContent = 'Terjadi kesalahan saat menyimpan data';
+  }
+});
+
+async function hapusManual(id) {
+  if (!confirm('Yakin hapus data ini?')) return;
+
+  try {
+    const res = await fetch(`/charging/delete/${id}`, { method: 'POST' });
+    const result = await res.json();
+
+    if (result.ok) {
+      refreshHistory();
+    } else {
+      alert(result.error || 'Gagal menghapus data');
+    }
+  } catch (err) {
+    console.error(err);
+    alert('Terjadi kesalahan saat menghapus data');
+  }
+}

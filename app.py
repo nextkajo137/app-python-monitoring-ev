@@ -3,9 +3,13 @@ import time
 import random
 import sqlite3
 import requests
+
+from routes.charging import charging_bp
+from routes.api_data import api_data_bp
+
+
 from datetime import datetime
 from typing import Dict, Any, List
-
 from dotenv import load_dotenv
 from flask import Flask, jsonify, render_template, request
 from flask_cors import CORS
@@ -15,6 +19,7 @@ load_dotenv()
 app = Flask(__name__)
 CORS(app)
 
+app.secret_key = os.getenv("SECRET_KEY", "monitoring-secrey-ev-charger-key")
 TARIFF_RP_PER_KWH = float(os.getenv("TARIFF_RP_PER_KWH", "1444.70"))
 APP_HOST = os.getenv("APP_HOST", "0.0.0.0")
 APP_PORT = int(os.getenv("APP_PORT", "5000"))
@@ -157,11 +162,17 @@ def init_db():
             time.time()
         ))
 
+    cur.execute("PRAGMA table_info(charging_history)")
+    existing_cols = [col[1] for col in cur.fetchall()]
+    if "source" not in existing_cols:
+        cur.execute("ALTER TABLE charging_history ADD COLUMN source TEXT DEFAULT 'auto'")
+
     conn.commit()
     conn.close()
 
 
 init_db()
+# init_user_table()
 
 
 # =========================
@@ -368,6 +379,7 @@ def get_history_items() -> List[Dict[str, Any]]:
 
     if safe_float(live.get("cycle_energy_kwh")) > 0 or live.get("status") == "charging":
         items.append({
+            "id": None,
             "cycle_id": "CHG-ACTIVE",
             "started_at": live.get("cycle_started_at", "-"),
             "ended_at": "-",
@@ -377,7 +389,8 @@ def get_history_items() -> List[Dict[str, Any]]:
             ),
             "energy_kwh": round(safe_float(live.get("cycle_energy_kwh")), 4),
             "cost_rp": round(safe_float(live.get("cycle_cost_rp")), 0),
-            "status": live.get("status", "idle")
+            "status": live.get("status", "idle"),
+            "source": "auto"
         })
 
     conn = db_conn()
@@ -385,13 +398,15 @@ def get_history_items() -> List[Dict[str, Any]]:
 
     cur.execute("""
         SELECT
+            id,
             cycle_id,
             started_at,
             ended_at,
             duration_min,
             energy_kwh,
             cost_rp,
-            status
+            status,
+            source
         FROM charging_history
         ORDER BY id DESC
         LIMIT 50
@@ -584,6 +599,29 @@ def health():
         "tariff_rp_per_kwh": TARIFF_RP_PER_KWH,
         "time": now_str()
     })
+
+
+# =========================
+# REGISTER BLUEPRINT (auth, charging CRUD, data API publik)
+# =========================
+
+# app.register_blueprint(auth_bp)
+app.register_blueprint(charging_bp)
+app.register_blueprint(api_data_bp)
+
+
+# =========================
+# ERROR HANDLER
+# =========================
+
+@app.errorhandler(404)
+def not_found(e):
+    return render_template("errors/404.html"), 404
+
+
+@app.errorhandler(403)
+def forbidden(e):
+    return render_template("errors/403.html"), 403
 
 
 if __name__ == "__main__":
