@@ -3,6 +3,8 @@ import time
 import random
 import sqlite3
 import requests
+import io
+import csv
 
 from routes.charging import charging_bp
 from routes.api_data import api_data_bp
@@ -11,7 +13,7 @@ from routes.api_data import api_data_bp
 from datetime import datetime
 from typing import Dict, Any, List
 from dotenv import load_dotenv
-from flask import Flask, jsonify, render_template, request
+from flask import Flask, jsonify, render_template, request, Response
 from flask_cors import CORS
 
 load_dotenv()
@@ -299,8 +301,6 @@ def update_live_from_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
     if level > 100:
         level = 100
 
-    # Jika status charging, akumulasi energi dihitung otomatis
-    # Rumus: kWh = kW x jam
     added_kwh = 0.0
 
     if new_status == "charging":
@@ -311,7 +311,6 @@ def update_live_from_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
     new_cycle_energy = old_cycle_energy + added_kwh
     new_total_energy = old_total_energy + added_kwh
 
-    # Kalau mulai charging dari idle, buat waktu mulai siklus baru
     cycle_started_at = old.get("cycle_started_at") or now_str()
 
     if old_status in ["idle", "standby", "completed"] and new_status == "charging":
@@ -374,19 +373,22 @@ def update_live_from_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
 
 def get_history_items() -> List[Dict[str, Any]]:
     live = get_live_state()
-
     items = []
 
     if safe_float(live.get("cycle_energy_kwh")) > 0 or live.get("status") == "charging":
+        started_at_str = live.get("cycle_started_at", "")
+        try:
+            started_dt = datetime.strptime(started_at_str, "%Y-%m-%d %H:%M:%S")
+            duration_active = max(0, int((time.time() - started_dt.timestamp()) // 60))
+        except Exception:
+            duration_active = 0
+
         items.append({
             "id": None,
             "cycle_id": "CHG-ACTIVE",
             "started_at": live.get("cycle_started_at", "-"),
-            "ended_at": "-",
-            "duration_min": max(
-                0,
-                int((time.time() - safe_float(live.get("last_update_ts"), time.time())) // 60)
-            ),
+            "ended_at": "Sedang Berjalan",
+            "duration_min": duration_active,
             "energy_kwh": round(safe_float(live.get("cycle_energy_kwh")), 4),
             "cost_rp": round(safe_float(live.get("cycle_cost_rp")), 0),
             "status": live.get("status", "idle"),
@@ -395,7 +397,6 @@ def get_history_items() -> List[Dict[str, Any]]:
 
     conn = db_conn()
     cur = conn.cursor()
-
     cur.execute("""
         SELECT
             id,
@@ -411,7 +412,6 @@ def get_history_items() -> List[Dict[str, Any]]:
         ORDER BY id DESC
         LIMIT 50
     """)
-
     rows = cur.fetchall()
     conn.close()
 
@@ -505,11 +505,22 @@ def index():
 @app.route("/api/live")
 def api_live():
     try:
+        # 1. Tarik data realtime dari Node-RED
         response = requests.get("http://127.0.0.1:1880/api/charger/live")
 
         if response.status_code == 200:
-            data = response.json()
-            return jsonify(data)
+            nr_data = response.json()
+            
+            # 2. SINKRONISASI: Update data Node-RED ke SQLite biar kWh & History jalan
+            db_data = update_live_from_payload(nr_data)
+            
+            # 3. Gabungin data Node-RED dengan hasil hitungan DB (kWh & Biaya)
+            nr_data["cycle_energy_kwh"] = db_data.get("cycle_energy_kwh", 0)
+            nr_data["cycle_cost_rp"] = db_data.get("cycle_cost_rp", 0)
+            nr_data["cycle_cost_text"] = db_data.get("cycle_cost_text", "Rp 0")
+            nr_data["timestamp"] = db_data.get("last_update", now_str())
+            
+            return jsonify(nr_data)
 
         return jsonify({
             "error": "Node-RED API gagal"
@@ -533,6 +544,76 @@ def api_history():
 def api_summary():
     return jsonify(get_summary_data())
 
+@app.route("/api/export/csv")
+def api_export_csv():
+
+    selected_date = request.args.get("date")
+
+    conn = db_conn()
+    cur = conn.cursor()
+
+    if selected_date:
+        cur.execute("""
+            SELECT cycle_id, started_at, ended_at,
+                   duration_min, energy_kwh,
+                   cost_rp, status
+            FROM charging_history
+            WHERE started_at LIKE ?
+            ORDER BY id DESC
+        """, (f"{selected_date}%",))
+
+    else:
+        cur.execute("""
+            SELECT cycle_id, started_at, ended_at,
+                   duration_min, energy_kwh,
+                   cost_rp, status
+            FROM charging_history
+            ORDER BY id DESC
+        """)
+
+    rows = cur.fetchall()
+    conn.close()
+
+    output = io.StringIO()
+
+    writer = csv.writer(output)
+
+    writer.writerow([
+        'ID Siklus',
+        'Waktu Mulai',
+        'Waktu Selesai',
+        'Durasi (Menit)',
+        'Energi (kWh)',
+        'Biaya (Rp)',
+        'Status'
+    ])
+
+    for row in rows:
+        writer.writerow([
+            row['cycle_id'],
+            row['started_at'],
+            row['ended_at'],
+            row['duration_min'],
+            row['energy_kwh'],
+            row['cost_rp'],
+            str(row['status']).upper()
+        ])
+
+    response = Response(
+        output.getvalue(),
+        mimetype="text/csv"
+    )
+
+    filename = "riwayat_charging.csv"
+
+    if selected_date:
+        filename = f"riwayat_charging_{selected_date}.csv"
+
+    response.headers[
+        "Content-Disposition"
+    ] = f"attachment; filename={filename}"
+
+    return response
 
 # =========================
 # API INPUT DARI NODE-RED
