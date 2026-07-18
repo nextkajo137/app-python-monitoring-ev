@@ -134,6 +134,12 @@ Jika berhasil:
 Running on http://127.0.0.1:5000
 ```
 
+## 5. Akun Akses Default
+
+Aplikasi sudah memiliki 3 akun **Superadmin** bawaan yang bisa langsung digunakan untuk mengelola sistem dan menerima pendaftaran user baru:
+- **Username:** `superadmin1` | `superadmin2` | `superadmin3`
+- **Password:** `superadmin123`
+
 ---
 
 # 🔌 Menjalankan Node-RED
