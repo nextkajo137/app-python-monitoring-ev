@@ -1,11 +1,11 @@
 {% extends "base.html" %}
-{% block title %}404 - Halaman Tidak Ditemukan{% endblock %}
+{% block title %}500 - Kesalahan Server{% endblock %}
 {% block content %}
 <div class="row justify-content-center mt-5">
     <div class="col-md-6 text-center">
-        <h1 class="display-1 text-danger">404</h1>
-        <h2>Halaman Tidak Ditemukan</h2>
-        <p class="lead">Maaf, halaman yang Anda cari tidak ada atau telah dipindahkan.</p>
+        <h1 class="display-1 text-danger">500</h1>
+        <h2>Kesalahan Server Internal</h2>
+        <p class="lead">Maaf, terjadi kesalahan pada server kami. Silakan coba beberapa saat lagi.</p>
         <a href="{{ url_for('index') }}" class="btn btn-primary mt-3">Kembali ke Beranda</a>
     </div>
 </div>
