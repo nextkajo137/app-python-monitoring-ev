@@ -1,12 +1,80 @@
-{% extends "base.html" %}
-{% block title %}500 - Kesalahan Server{% endblock %}
-{% block content %}
-<div class="row justify-content-center mt-5">
-    <div class="col-md-6 text-center">
-        <h1 class="display-1 text-danger">500</h1>
-        <h2>Kesalahan Server Internal</h2>
-        <p class="lead">Maaf, terjadi kesalahan pada server kami. Silakan coba beberapa saat lagi.</p>
-        <a href="{{ url_for('index') }}" class="btn btn-primary mt-3">Kembali ke Beranda</a>
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>500 Internal Error - EV Charger Monitoring</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+
+  <style>
+    .error-container {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      position: relative;
+      z-index: 10;
+      padding: 20px;
+    }
+    .error-card {
+      text-align: center;
+      padding: 50px 40px;
+      max-width: 450px;
+      width: 100%;
+      border-radius: 20px;
+    }
+    .error-code {
+      font-size: 6rem;
+      font-weight: 800;
+      margin: 0;
+      line-height: 1;
+      color: var(--red);
+      text-shadow: 0 0 20px rgba(251, 113, 133, 0.4);
+    }
+    .error-title {
+      font-size: 1.5rem;
+      font-weight: 600;
+      margin: 20px 0 10px;
+      color: var(--text);
+    }
+    .error-desc {
+      color: var(--muted);
+      margin-bottom: 35px;
+      line-height: 1.6;
+    }
+    .btn-home {
+      display: inline-block;
+      text-decoration: none;
+      padding: 12px 28px;
+      border-radius: 8px;
+      font-weight: 600;
+      background: var(--blue);
+      color: #fff;
+      transition: all 0.3s ease;
+      border: 1px solid rgba(59, 130, 246, 0.5);
+    }
+    .btn-home:hover {
+      background: #2563eb;
+      box-shadow: 0 0 20px rgba(59, 130, 246, 0.4);
+      transform: translateY(-2px);
+    }
+  </style>
+</head>
+<body>
+  <div class="aurora aurora-a"></div>
+  <div class="aurora aurora-b"></div>
+
+  <div class="error-container">
+    <div class="glass error-card">
+      <h1 class="error-code">500</h1>
+      <h2 class="error-title">Kesalahan Server</h2>
+      <p class="error-desc">Terjadi kesalahan pada sistem kami. Silakan coba kembali dalam beberapa saat.</p>
+      <a href="{{ url_for('index') }}" class="btn-home">Kembali ke Dashboard</a>
     </div>
-</div>
-{% endblock %}
+  </div>
+</body>
+</html>

@@ -37,6 +37,10 @@
         <button class="nav-link" data-page="history">Riwayat Charging</button>
         <button class="nav-link" data-page="cost">Total Biaya Konsumsi</button>
         <button class="nav-link" data-page="kwh">Total kWh Charging</button>
+        <button class="nav-link" data-page="profile">Profil</button>
+        {% if session.get('role') in ['admin', 'superadmin'] %}
+        <button class="nav-link" data-page="users">Kontrol User</button>
+        {% endif %}
       </nav>
 
       <div class="node-card">
@@ -47,21 +51,28 @@
     </aside>
 
     <main class="content">
-      <header class="topbar glass">
+      <header class="topbar glass" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
         <div>
           <p class="eyebrow">Live Monitoring</p>
           <h2>Dashboard Penggunaan Daya Charger Mobil Listrik</h2>
         </div>
-      </header>
-
-  
+        <div style="display: flex; align-items: center; gap: 15px;">
+            <span style="color: rgba(255,255,255,0.8); font-size: 0.95rem;">
+                Hi, <strong>{{ session.get('username') }}</strong> ({{ session.get('role')|title }})
+            </span>
+            <a href="{{ url_for('auth.logout') }}" class="btn danger" style="padding: 8px 15px; text-decoration: none; font-size: 0.9rem; font-weight: 600; line-height: 1.5;">Logout</a>
+        </div>
       </header>
 
       <section id="page-dashboard" class="page active">
         <div class="dashboard-actions">
-          <button id="btnStart" class="btn primary">Start</button>
-          <button id="btnPause" class="btn">Pause</button>
-          <button id="btnReset" class="btn danger">Reset</button>
+            {% if session.get('role') == 'admin' %}
+            <button id="btnStart" class="btn primary">Start</button>
+            <button id="btnPause" class="btn">Pause</button>
+            <button id="btnReset" class="btn danger">Reset</button>
+            {% else %}
+            <span class="text-muted small align-self-center">Monitoring Only</span>
+            {% endif %}
         </div>
         <div class="hero-grid">
           <div class="status-panel glass">
@@ -228,6 +239,123 @@
 
         </div>
       </section>
+      <section id="page-profile" class="page">
+        <div class="glass table-card" style="max-width: 600px; margin: 0 auto;">
+          <div class="section-head">
+            <div>
+              <p class="eyebrow">Pengaturan Akun</p>
+              <h3>Profil Saya</h3>
+            </div>
+          </div>
+          
+          <form method="POST" action="{{ url_for('profile.index') }}" style="margin-top: 20px;">
+            <div class="form-group" style="margin-bottom: 15px;">
+                <label style="color: rgba(255,255,255,0.7); display: block; margin-bottom: 5px;">Role Akses</label>
+                <input type="text" value="{{ current_user.role|title }}" disabled style="width: 100%; padding: 10px; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.1); color: #fff; border-radius: 6px;">
+            </div>
+            <div class="form-group" style="margin-bottom: 15px;">
+                <label for="username" style="color: rgba(255,255,255,0.7); display: block; margin-bottom: 5px;">Username</label>
+                <input type="text" id="username" name="username" value="{{ current_user.username }}" required style="width: 100%; padding: 10px; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.2); color: #fff; border-radius: 6px;">
+            </div>
+            
+            <hr style="border-color: rgba(255,255,255,0.1); margin: 30px 0;">
+            
+            <h4 style="margin-bottom: 20px;">Ubah Password <small style="font-size: 0.8rem; opacity: 0.7;">(Opsional)</small></h4>
+            <div class="form-group" style="margin-bottom: 15px;">
+                <label for="current_password" style="color: rgba(255,255,255,0.7); display: block; margin-bottom: 5px;">Password Saat Ini <span style="color: #00eaff;">*</span></label>
+                <input type="password" id="current_password" name="current_password" required placeholder="Wajib diisi untuk menyimpan perubahan" style="width: 100%; padding: 10px; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.2); color: #fff; border-radius: 6px;">
+            </div>
+            <div class="form-group" style="margin-bottom: 15px;">
+                <label for="new_password" style="color: rgba(255,255,255,0.7); display: block; margin-bottom: 5px;">Password Baru</label>
+                <input type="password" id="new_password" name="new_password" placeholder="Kosongkan jika tidak ingin ganti" style="width: 100%; padding: 10px; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.2); color: #fff; border-radius: 6px;">
+            </div>
+            <div class="form-group" style="margin-bottom: 30px;">
+                <label for="confirm_password" style="color: rgba(255,255,255,0.7); display: block; margin-bottom: 5px;">Konfirmasi Password Baru</label>
+                <input type="password" id="confirm_password" name="confirm_password" placeholder="Kosongkan jika tidak ingin ganti" style="width: 100%; padding: 10px; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.2); color: #fff; border-radius: 6px;">
+            </div>
+            <button type="submit" class="btn primary" style="width: 100%; padding: 12px; font-size: 1.1rem;">Simpan Perubahan</button>
+          </form>
+        </div>
+      </section>
+
+      {% if session.get('role') in ['admin', 'superadmin'] %}
+      <section id="page-users" class="page">
+        <div class="glass table-card">
+          <div class="section-head">
+            <div>
+              <p class="eyebrow">Manajemen Akses</p>
+              <h3>Kontrol User</h3>
+            </div>
+          </div>
+          
+          <div class="table-container">
+            <table>
+              <thead>
+                <tr>
+                  <th>Username</th>
+                  <th>Role</th>
+                  <th>Last Login</th>
+                  <th>Approval</th>
+                  <th>Status Aktif</th>
+                  <th>Aksi</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for u in users_list %}
+                <tr>
+                    <td>{{ u.username }}</td>
+                    <td><span style="background: rgba(255,255,255,0.2); padding: 4px 8px; border-radius: 12px; font-size: 0.8rem;">{{ u.role|title }}</span></td>
+                    <td>{{ u.last_login_at or '-' }}</td>
+                    <td>
+                        {% if u.is_approved %}
+                            <span style="color: #00eaff;">Approved</span>
+                        {% else %}
+                            <span style="color: #ff9f43;">Pending</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if u.is_active %}
+                            <span style="color: #00eaff;">Active</span>
+                        {% else %}
+                            <span style="color: #ff4757;">Deactivated</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        <div style="display: flex; gap: 8px;">
+                            {% if not u.is_approved %}
+                            <form method="POST" action="{{ url_for('users.approve', user_id=u.id) }}" style="margin:0;">
+                                <button type="submit" class="btn primary" style="padding: 6px 12px; font-size: 0.8rem;">Approve</button>
+                            </form>
+                            {% endif %}
+                            
+                            <form method="POST" action="{{ url_for('users.toggle_active', user_id=u.id) }}" style="margin:0;">
+                                {% if u.is_active %}
+                                    <button type="submit" class="btn danger" style="padding: 6px 12px; font-size: 0.8rem;">Deactivate</button>
+                                {% else %}
+                                    <button type="submit" class="btn" style="padding: 6px 12px; font-size: 0.8rem;">Activate</button>
+                                {% endif %}
+                            </form>
+                            
+                            {% if u.role != 'superadmin' %}
+                            <form method="POST" action="{{ url_for('users.delete', user_id=u.id) }}" style="margin:0;" onsubmit="return confirm('Apakah Anda yakin ingin menghapus akun ini secara permanen?');">
+                                <button type="submit" class="btn danger" style="padding: 6px 12px; font-size: 0.8rem; background: rgba(255, 71, 87, 0.2); border-color: #ff4757; color: #ff4757;">Hapus</button>
+                            </form>
+                            {% endif %}
+                        </div>
+                    </td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="6" style="text-align: center; opacity: 0.7;">Belum ada user.</td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+      {% endif %}
+
     </main>
   </div>
 

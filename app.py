@@ -8,7 +8,10 @@ import csv
 
 from routes.charging import charging_bp
 from routes.api_data import api_data_bp
-
+from routes.auth import auth_bp, login_required
+from routes.users import users_bp
+from routes.profile import profile_bp
+from flask import session
 
 from datetime import datetime
 from typing import Dict, Any, List
@@ -94,6 +97,15 @@ def init_db():
     cur = conn.cursor()
 
     cur.execute("""
+        CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT UNIQUE NOT NULL,
+            password_hash TEXT NOT NULL,
+            role TEXT NOT NULL DEFAULT 'user'
+        )
+    """)
+
+    cur.execute("""
         CREATE TABLE IF NOT EXISTS live_state (
             id INTEGER PRIMARY KEY CHECK (id = 1),
             source TEXT,
@@ -108,7 +120,8 @@ def init_db():
             total_cost_rp REAL,
             cycle_started_at TEXT,
             last_update TEXT,
-            last_update_ts REAL
+            last_update_ts REAL,
+            user_id INTEGER
         )
     """)
 
@@ -121,7 +134,9 @@ def init_db():
             duration_min INTEGER,
             energy_kwh REAL,
             cost_rp REAL,
-            status TEXT
+            status TEXT,
+            source TEXT DEFAULT 'auto',
+            user_id INTEGER
         )
     """)
 
@@ -144,9 +159,10 @@ def init_db():
                 total_cost_rp,
                 cycle_started_at,
                 last_update,
-                last_update_ts
+                last_update_ts,
+                user_id
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             1,
             "init",
@@ -161,20 +177,50 @@ def init_db():
             0.0,
             now_str(),
             now_str(),
-            time.time()
+            time.time(),
+            None
         ))
+
+    cur.execute("PRAGMA table_info(live_state)")
+    existing_cols_live = [col[1] for col in cur.fetchall()]
+    if "user_id" not in existing_cols_live:
+        cur.execute("ALTER TABLE live_state ADD COLUMN user_id INTEGER DEFAULT NULL")
 
     cur.execute("PRAGMA table_info(charging_history)")
     existing_cols = [col[1] for col in cur.fetchall()]
     if "source" not in existing_cols:
         cur.execute("ALTER TABLE charging_history ADD COLUMN source TEXT DEFAULT 'auto'")
+    if "user_id" not in existing_cols:
+        cur.execute("ALTER TABLE charging_history ADD COLUMN user_id INTEGER DEFAULT NULL")
 
+    cur.execute("PRAGMA table_info(users)")
+    existing_cols_users = [col[1] for col in cur.fetchall()]
+    if "is_approved" not in existing_cols_users:
+        cur.execute("ALTER TABLE users ADD COLUMN is_approved INTEGER DEFAULT 0")
+        cur.execute("UPDATE users SET is_approved = 1") # Approve existing users
+    if "is_active" not in existing_cols_users:
+        cur.execute("ALTER TABLE users ADD COLUMN is_active INTEGER DEFAULT 1")
+    if "last_login_at" not in existing_cols_users:
+        cur.execute("ALTER TABLE users ADD COLUMN last_login_at TEXT")
+
+    # Seed 3 fixed superadmin accounts
+    from werkzeug.security import generate_password_hash
+    for i in range(1, 4):
+        username = f"superadmin{i}"
+        cur.execute("SELECT id FROM users WHERE username = ?", (username,))
+        if cur.fetchone() is None:
+            cur.execute("""
+                INSERT INTO users (username, password_hash, role, is_approved, is_active)
+                VALUES (?, ?, ?, ?, ?)
+            """, (username, generate_password_hash("superadmin123"), "superadmin", 1, 1))
+
+    # Hapus default admin jika sebelumnya terbuat namun belum dihapus manual (opsional, biarkan saja)
+    
     conn.commit()
     conn.close()
 
 
 init_db()
-# init_user_table()
 
 
 # =========================
@@ -217,6 +263,7 @@ def insert_history_if_cycle_finished(old_state: Dict[str, Any], new_status: str,
     old_status = old_state.get("status")
     old_energy = safe_float(old_state.get("cycle_energy_kwh"))
     cycle_started_at = old_state.get("cycle_started_at") or now_str()
+    user_id = old_state.get("user_id")
 
     should_finish = False
 
@@ -255,9 +302,10 @@ def insert_history_if_cycle_finished(old_state: Dict[str, Any], new_status: str,
             duration_min,
             energy_kwh,
             cost_rp,
-            status
+            status,
+            user_id
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     """, (
         cycle_id,
         cycle_started_at,
@@ -265,8 +313,12 @@ def insert_history_if_cycle_finished(old_state: Dict[str, Any], new_status: str,
         duration_min,
         round(old_energy, 4),
         round(cycle_cost, 0),
-        "completed"
+        "completed",
+        user_id
     ))
+
+    # Reset user_id in live_state
+    cur.execute("UPDATE live_state SET user_id = NULL WHERE id = 1")
 
     conn.commit()
     conn.close()
@@ -329,6 +381,8 @@ def update_live_from_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
     new_cycle_cost = new_cycle_energy * TARIFF_RP_PER_KWH
     new_total_cost = new_total_energy * TARIFF_RP_PER_KWH
 
+    user_id = payload.get("user_id", old.get("user_id"))
+
     conn = db_conn()
     cur = conn.cursor()
 
@@ -347,7 +401,8 @@ def update_live_from_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
             total_cost_rp = ?,
             cycle_started_at = ?,
             last_update = ?,
-            last_update_ts = ?
+            last_update_ts = ?,
+            user_id = ?
         WHERE id = 1
     """, (
         source,
@@ -362,7 +417,8 @@ def update_live_from_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
         round(new_total_cost, 0),
         cycle_started_at,
         now_str(),
-        now_ts
+        now_ts,
+        user_id
     ))
 
     conn.commit()
@@ -371,7 +427,7 @@ def update_live_from_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
     return get_live_state()
 
 
-def get_history_items() -> List[Dict[str, Any]]:
+def get_history_items(role=None, user_id=None) -> List[Dict[str, Any]]:
     live = get_live_state()
     items = []
 
@@ -397,21 +453,42 @@ def get_history_items() -> List[Dict[str, Any]]:
 
     conn = db_conn()
     cur = conn.cursor()
-    cur.execute("""
-        SELECT
-            id,
-            cycle_id,
-            started_at,
-            ended_at,
-            duration_min,
-            energy_kwh,
-            cost_rp,
-            status,
-            source
-        FROM charging_history
-        ORDER BY id DESC
-        LIMIT 50
-    """)
+    
+    if role == "user" and user_id is not None:
+        cur.execute("""
+            SELECT
+                id,
+                cycle_id,
+                started_at,
+                ended_at,
+                duration_min,
+                energy_kwh,
+                cost_rp,
+                status,
+                source,
+                user_id
+            FROM charging_history
+            WHERE user_id = ?
+            ORDER BY id DESC
+            LIMIT 50
+        """, (user_id,))
+    else:
+        cur.execute("""
+            SELECT
+                id,
+                cycle_id,
+                started_at,
+                ended_at,
+                duration_min,
+                energy_kwh,
+                cost_rp,
+                status,
+                source,
+                user_id
+            FROM charging_history
+            ORDER BY id DESC
+            LIMIT 50
+        """)
     rows = cur.fetchall()
     conn.close()
 
@@ -489,11 +566,31 @@ def generate_dummy_payload() -> Dict[str, Any]:
 # =========================
 
 @app.route("/")
+@login_required
 def index():
+    conn = db_conn()
+    cur = conn.cursor()
+    
+    cur.execute("SELECT * FROM users WHERE id = ?", (session.get("user_id"),))
+    current_user = cur.fetchone()
+    
+    users_list = []
+    role = session.get("role")
+    if role in ["admin", "superadmin"]:
+        if role == "superadmin":
+            cur.execute("SELECT id, username, role, is_approved, is_active, last_login_at FROM users WHERE role IN ('user', 'admin')")
+        else:
+            cur.execute("SELECT id, username, role, is_approved, is_active, last_login_at FROM users WHERE role = 'user'")
+        users_list = cur.fetchall()
+        
+    conn.close()
+
     return render_template(
         "index.html",
         tariff=TARIFF_RP_PER_KWH,
-        node_red_url="POST /api/ingest"
+        node_red_url="POST /api/ingest",
+        current_user=current_user,
+        users_list=users_list
     )
 
 
@@ -533,10 +630,13 @@ def api_live():
 
 
 @app.route("/api/history")
+@login_required
 def api_history():
+    role = session.get("role")
+    user_id = session.get("user_id")
     return jsonify({
         "source": "sqlite",
-        "items": get_history_items()
+        "items": get_history_items(role=role, user_id=user_id)
     })
 
 
@@ -548,28 +648,50 @@ def api_summary():
 def api_export_csv():
 
     selected_date = request.args.get("date")
+    role = session.get("role")
+    user_id = session.get("user_id")
 
     conn = db_conn()
     cur = conn.cursor()
 
     if selected_date:
-        cur.execute("""
-            SELECT cycle_id, started_at, ended_at,
-                   duration_min, energy_kwh,
-                   cost_rp, status
-            FROM charging_history
-            WHERE started_at LIKE ?
-            ORDER BY id DESC
-        """, (f"{selected_date}%",))
+        if role == "user" and user_id is not None:
+            cur.execute("""
+                SELECT cycle_id, started_at, ended_at,
+                       duration_min, energy_kwh,
+                       cost_rp, status
+                FROM charging_history
+                WHERE started_at LIKE ? AND user_id = ?
+                ORDER BY id DESC
+            """, (f"{selected_date}%", user_id))
+        else:
+            cur.execute("""
+                SELECT cycle_id, started_at, ended_at,
+                       duration_min, energy_kwh,
+                       cost_rp, status
+                FROM charging_history
+                WHERE started_at LIKE ?
+                ORDER BY id DESC
+            """, (f"{selected_date}%",))
 
     else:
-        cur.execute("""
-            SELECT cycle_id, started_at, ended_at,
-                   duration_min, energy_kwh,
-                   cost_rp, status
-            FROM charging_history
-            ORDER BY id DESC
-        """)
+        if role == "user" and user_id is not None:
+            cur.execute("""
+                SELECT cycle_id, started_at, ended_at,
+                       duration_min, energy_kwh,
+                       cost_rp, status
+                FROM charging_history
+                WHERE user_id = ?
+                ORDER BY id DESC
+            """, (user_id,))
+        else:
+            cur.execute("""
+                SELECT cycle_id, started_at, ended_at,
+                       duration_min, energy_kwh,
+                       cost_rp, status
+                FROM charging_history
+                ORDER BY id DESC
+            """)
 
     rows = cur.fetchall()
     conn.close()
@@ -637,8 +759,15 @@ def api_ingest():
 # =========================
 
 @app.route("/api/control", methods=["POST"])
+@login_required
 def api_control():
     payload = request.get_json(silent=True) or {}
+    
+    action = payload.get("action")
+    if action == "start":
+        payload["user_id"] = session.get("user_id")
+        # Ensure we set user_id in live_state directly
+        update_live_from_payload({"status": "charging", "user_id": session.get("user_id")})
 
     try:
         response = requests.post(
@@ -686,7 +815,9 @@ def health():
 # REGISTER BLUEPRINT (auth, charging CRUD, data API publik)
 # =========================
 
-# app.register_blueprint(auth_bp)
+app.register_blueprint(auth_bp)
+app.register_blueprint(users_bp, url_prefix="/users")
+app.register_blueprint(profile_bp, url_prefix="/profile")
 app.register_blueprint(charging_bp)
 app.register_blueprint(api_data_bp)
 
@@ -703,6 +834,15 @@ def not_found(e):
 @app.errorhandler(403)
 def forbidden(e):
     return render_template("errors/403.html"), 403
+
+@app.errorhandler(401)
+def unauthorized(e):
+    return render_template("errors/403.html"), 401
+
+
+@app.errorhandler(500)
+def internal_error(e):
+    return render_template("errors/500.html"), 500
 
 
 @app.errorhandler(500)
