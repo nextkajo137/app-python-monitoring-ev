@@ -83,7 +83,7 @@ def status_label(status: str) -> str:
 
 
 def db_conn():
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_PATH, timeout=30.0)
     conn.row_factory = sqlite3.Row
     return conn
 
@@ -95,6 +95,8 @@ def db_conn():
 def init_db():
     conn = db_conn()
     cur = conn.cursor()
+    cur.execute("PRAGMA journal_mode=WAL;")
+    cur.execute("PRAGMA busy_timeout=30000;")
 
     cur.execute("""
         CREATE TABLE IF NOT EXISTS users (
@@ -106,8 +108,8 @@ def init_db():
     """)
 
     cur.execute("""
-        CREATE TABLE IF NOT EXISTS live_state (
-            id INTEGER PRIMARY KEY CHECK (id = 1),
+        CREATE TABLE IF NOT EXISTS user_live_state (
+            user_id INTEGER PRIMARY KEY,
             source TEXT,
             status TEXT,
             level_percent REAL,
@@ -120,8 +122,7 @@ def init_db():
             total_cost_rp REAL,
             cycle_started_at TEXT,
             last_update TEXT,
-            last_update_ts REAL,
-            user_id INTEGER
+            last_update_ts REAL
         )
     """)
 
@@ -139,52 +140,6 @@ def init_db():
             user_id INTEGER
         )
     """)
-
-    cur.execute("SELECT id FROM live_state WHERE id = 1")
-    row = cur.fetchone()
-
-    if row is None:
-        cur.execute("""
-            INSERT INTO live_state (
-                id,
-                source,
-                status,
-                level_percent,
-                charger_power_kw,
-                charger_voltage_v,
-                pln_voltage_v,
-                cycle_energy_kwh,
-                cycle_cost_rp,
-                total_energy_kwh,
-                total_cost_rp,
-                cycle_started_at,
-                last_update,
-                last_update_ts,
-                user_id
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (
-            1,
-            "init",
-            "idle",
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            now_str(),
-            now_str(),
-            time.time(),
-            None
-        ))
-
-    cur.execute("PRAGMA table_info(live_state)")
-    existing_cols_live = [col[1] for col in cur.fetchall()]
-    if "user_id" not in existing_cols_live:
-        cur.execute("ALTER TABLE live_state ADD COLUMN user_id INTEGER DEFAULT NULL")
 
     cur.execute("PRAGMA table_info(charging_history)")
     existing_cols = [col[1] for col in cur.fetchall()]
@@ -214,8 +169,6 @@ def init_db():
                 VALUES (?, ?, ?, ?, ?)
             """, (username, generate_password_hash("superadmin123"), "superadmin", 1, 1))
 
-    # Hapus default admin jika sebelumnya terbuat namun belum dihapus manual (opsional, biarkan saja)
-    
     conn.commit()
     conn.close()
 
@@ -227,17 +180,48 @@ init_db()
 # DATABASE FUNCTION
 # =========================
 
-def get_live_state() -> Dict[str, Any]:
+def get_live_state(user_id: int = None) -> Dict[str, Any]:
+    if not user_id and "user_id" in session:
+        user_id = session.get("user_id")
+
     conn = db_conn()
     cur = conn.cursor()
-    cur.execute("SELECT * FROM live_state WHERE id = 1")
-    row = cur.fetchone()
+
+    row = None
+    if user_id:
+        cur.execute("SELECT * FROM user_live_state WHERE user_id = ?", (user_id,))
+        row = cur.fetchone()
+        if row is None:
+            cur.execute("""
+                INSERT OR IGNORE INTO user_live_state (
+                    user_id, source, status, level_percent, charger_power_kw,
+                    charger_voltage_v, pln_voltage_v, cycle_energy_kwh, cycle_cost_rp,
+                    total_energy_kwh, total_cost_rp, cycle_started_at, last_update, last_update_ts
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                user_id, "init", "idle", 20.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                now_str(), now_str(), time.time()
+            ))
+            conn.commit()
+            cur.execute("SELECT * FROM user_live_state WHERE user_id = ?", (user_id,))
+            row = cur.fetchone()
+    else:
+        cur.execute("SELECT * FROM user_live_state ORDER BY user_id LIMIT 1")
+        row = cur.fetchone()
+
     conn.close()
 
     if not row:
-        return {}
+        return {
+            "source": "init", "status": "idle", "level_percent": 0.0, "charger_power_kw": 0.0,
+            "charger_voltage_v": 0.0, "pln_voltage_v": 0.0, "cycle_energy_kwh": 0.0, "cycle_cost_rp": 0,
+            "cycle_cost_text": rupiah(0), "total_energy_kwh": 0.0, "total_cost_rp": 0, "total_cost_text": rupiah(0),
+            "status_label": "Standby", "tariff_rp_per_kwh": TARIFF_RP_PER_KWH, "charger_power_w": 0,
+            "data_age_seconds": 0, "connection_status": "stale", "user_id": user_id
+        }
 
     data = dict(row)
+    data["user_id"] = user_id or data.get("user_id")
 
     cycle_cost = safe_float(data.get("cycle_energy_kwh")) * TARIFF_RP_PER_KWH
     total_cost = safe_float(data.get("total_energy_kwh")) * TARIFF_RP_PER_KWH
@@ -262,6 +246,7 @@ def get_live_state() -> Dict[str, Any]:
 def insert_history_if_cycle_finished(old_state: Dict[str, Any], new_status: str, new_level: float):
     old_status = old_state.get("status")
     old_energy = safe_float(old_state.get("cycle_energy_kwh"))
+    old_level = safe_float(old_state.get("level_percent"))
     cycle_started_at = old_state.get("cycle_started_at") or now_str()
     user_id = old_state.get("user_id")
 
@@ -274,10 +259,13 @@ def insert_history_if_cycle_finished(old_state: Dict[str, Any], new_status: str,
         should_finish = True
         new_status = "completed"
 
+    if old_status == "charging" and new_level < (old_level - 15.0):
+        should_finish = True
+
     if not should_finish:
         return False
 
-    if old_energy <= 0.001:
+    if old_energy <= 0.00001:
         return False
 
     try:
@@ -303,9 +291,10 @@ def insert_history_if_cycle_finished(old_state: Dict[str, Any], new_status: str,
             energy_kwh,
             cost_rp,
             status,
+            source,
             user_id
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, 'auto', ?)
     """, (
         cycle_id,
         cycle_started_at,
@@ -317,8 +306,8 @@ def insert_history_if_cycle_finished(old_state: Dict[str, Any], new_status: str,
         user_id
     ))
 
-    # Reset user_id in live_state
-    cur.execute("UPDATE live_state SET user_id = NULL WHERE id = 1")
+    if user_id:
+        cur.execute("UPDATE user_live_state SET cycle_energy_kwh = 0, charger_power_kw = 0, status = ? WHERE user_id = ?", (new_status if new_status in ['completed', 'idle'] else 'completed', user_id))
 
     conn.commit()
     conn.close()
@@ -326,39 +315,53 @@ def insert_history_if_cycle_finished(old_state: Dict[str, Any], new_status: str,
     return True
 
 
-def update_live_from_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
-    old = get_live_state()
+def update_live_from_payload(payload: Dict[str, Any], user_id: int = None) -> Dict[str, Any]:
+    if not user_id:
+        user_id = payload.get("user_id") or session.get("user_id")
+
+    if not user_id:
+        return {}
+
+    old = get_live_state(user_id=user_id)
 
     old_status = old.get("status", "idle")
     old_power_kw = safe_float(old.get("charger_power_kw"))
     old_cycle_energy = safe_float(old.get("cycle_energy_kwh"))
     old_total_energy = safe_float(old.get("total_energy_kwh"))
-    old_level = safe_float(old.get("level_percent"))
+    old_level = safe_float(old.get("level_percent", 20.0))
     old_ts = safe_float(old.get("last_update_ts"), time.time())
 
     now_ts = time.time()
     dt = max(0, min(now_ts - old_ts, 10))
 
-    source = str(payload.get("source", "node-red"))
-    new_status = safe_status(payload.get("status", old_status))
+    source = str(payload.get("source", "local"))
+    if source in ["node-red-dummy", "node-red"]:
+        new_status = old_status
+    else:
+        new_status = safe_status(payload.get("status", old_status))
 
-    power_kw = safe_float(payload.get("charger_power_kw", payload.get("power_kw", old_power_kw)))
-    charger_voltage = safe_float(payload.get("charger_voltage_v", payload.get("charger_voltage", 0)))
-    pln_voltage = safe_float(payload.get("pln_voltage_v", payload.get("pln_voltage", 0)))
-    level = safe_float(payload.get("level_percent", payload.get("level", old_level)))
+    charger_voltage = safe_float(payload.get("charger_voltage_v", payload.get("charger_voltage", random.uniform(380, 410))))
+    pln_voltage = safe_float(payload.get("pln_voltage_v", payload.get("pln_voltage", random.uniform(217, 230))))
+
+    level = old_level
+    if new_status == "charging":
+        if level < 80:
+            power_kw = random.uniform(6.0, 7.4)
+        elif level < 95:
+            power_kw = random.uniform(3.0, 5.5)
+        else:
+            power_kw = random.uniform(0.8, 2.0)
+
+        added_kwh = power_kw * (dt / 3600.0)
+        level += power_kw * dt * 0.035
+    else:
+        power_kw = 0.0
+        added_kwh = 0.0
 
     if level < 0:
         level = 0
-
-    if level > 100:
+    if level >= 100:
         level = 100
-
-    added_kwh = 0.0
-
-    if new_status == "charging":
-        added_kwh = power_kw * (dt / 3600.0)
-    else:
-        power_kw = 0.0
 
     new_cycle_energy = old_cycle_energy + added_kwh
     new_total_energy = old_total_energy + added_kwh
@@ -368,6 +371,8 @@ def update_live_from_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
     if old_status in ["idle", "standby", "completed"] and new_status == "charging":
         cycle_started_at = now_str()
         new_cycle_energy = 0.0
+        if level >= 100:
+            level = 15.0
 
     finished = insert_history_if_cycle_finished(old, new_status, level)
 
@@ -381,13 +386,11 @@ def update_live_from_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
     new_cycle_cost = new_cycle_energy * TARIFF_RP_PER_KWH
     new_total_cost = new_total_energy * TARIFF_RP_PER_KWH
 
-    user_id = payload.get("user_id", old.get("user_id"))
-
     conn = db_conn()
     cur = conn.cursor()
 
     cur.execute("""
-        UPDATE live_state
+        UPDATE user_live_state
         SET
             source = ?,
             status = ?,
@@ -401,9 +404,8 @@ def update_live_from_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
             total_cost_rp = ?,
             cycle_started_at = ?,
             last_update = ?,
-            last_update_ts = ?,
-            user_id = ?
-        WHERE id = 1
+            last_update_ts = ?
+        WHERE user_id = ?
     """, (
         source,
         new_status,
@@ -424,14 +426,19 @@ def update_live_from_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
     conn.commit()
     conn.close()
 
-    return get_live_state()
+    return get_live_state(user_id=user_id)
 
 
 def get_history_items(role=None, user_id=None) -> List[Dict[str, Any]]:
-    live = get_live_state()
+    live = get_live_state(user_id=user_id)
     items = []
 
+    show_active = False
     if safe_float(live.get("cycle_energy_kwh")) > 0 or live.get("status") == "charging":
+        if role != "user" or (user_id is not None and live.get("user_id") == user_id):
+            show_active = True
+
+    if show_active:
         started_at_str = live.get("cycle_started_at", "")
         try:
             started_dt = datetime.strptime(started_at_str, "%Y-%m-%d %H:%M:%S")
@@ -498,27 +505,57 @@ def get_history_items(role=None, user_id=None) -> List[Dict[str, Any]]:
     return items
 
 
-def get_summary_data() -> Dict[str, Any]:
-    live = get_live_state()
-
+def get_summary_data(role=None, user_id=None) -> Dict[str, Any]:
+    live = get_live_state(user_id=user_id)
     conn = db_conn()
     cur = conn.cursor()
-    cur.execute("SELECT COUNT(*) AS total_cycles FROM charging_history")
-    row = cur.fetchone()
+
+    if role == "user" and user_id is not None:
+        cur.execute("""
+            SELECT
+                COUNT(*) AS total_cycles,
+                COALESCE(SUM(energy_kwh), 0) AS history_energy_kwh,
+                COALESCE(SUM(cost_rp), 0) AS history_cost_rp
+            FROM charging_history
+            WHERE user_id = ?
+        """, (user_id,))
+        row = cur.fetchone()
+
+        active_energy = safe_float(live.get("cycle_energy_kwh"))
+        active_cost = safe_float(live.get("cycle_cost_rp"))
+
+        tot_energy = round(safe_float(row["history_energy_kwh"]) + active_energy, 4)
+        tot_cost = round(safe_float(row["history_cost_rp"]) + active_cost, 0)
+        total_cycles = row["total_cycles"] if row else 0
+    else:
+        cur.execute("""
+            SELECT
+                COUNT(*) AS total_cycles,
+                COALESCE(SUM(energy_kwh), 0) AS history_energy_kwh,
+                COALESCE(SUM(cost_rp), 0) AS history_cost_rp
+            FROM charging_history
+        """)
+        row = cur.fetchone()
+
+        tot_energy = round(safe_float(row["history_energy_kwh"]) + safe_float(live.get("cycle_energy_kwh")), 4)
+        tot_cost = round(safe_float(row["history_cost_rp"]) + safe_float(live.get("cycle_cost_rp")), 0)
+        total_cycles = row["total_cycles"] if row else 0
+
     conn.close()
 
-    total_cycles = row["total_cycles"] if row else 0
+    active_cycle_energy = round(safe_float(live.get("cycle_energy_kwh")), 4)
+    active_cycle_cost = round(safe_float(live.get("cycle_cost_rp")), 0)
 
     return {
         "source": live.get("source", "database"),
-        "total_cost_rp": live.get("total_cost_rp", 0),
-        "total_cost_text": live.get("total_cost_text", rupiah(0)),
-        "total_energy_kwh": round(safe_float(live.get("total_energy_kwh")), 4),
+        "total_cost_rp": tot_cost,
+        "total_cost_text": rupiah(tot_cost),
+        "total_energy_kwh": tot_energy,
         "tariff_rp_per_kwh": TARIFF_RP_PER_KWH,
         "total_cycles": total_cycles,
-        "active_cycle_energy_kwh": round(safe_float(live.get("cycle_energy_kwh")), 4),
-        "active_cycle_cost_rp": round(safe_float(live.get("cycle_cost_rp")), 0),
-        "active_cycle_cost_text": live.get("cycle_cost_text", rupiah(0)),
+        "active_cycle_energy_kwh": active_cycle_energy,
+        "active_cycle_cost_rp": active_cycle_cost,
+        "active_cycle_cost_text": rupiah(active_cycle_cost),
         "connection_status": live.get("connection_status", "unknown"),
         "data_age_seconds": live.get("data_age_seconds", 0),
     }
@@ -600,33 +637,24 @@ def index():
 
 
 @app.route("/api/live")
+@login_required
 def api_live():
+    user_id = session.get("user_id")
     try:
-        # 1. Tarik data realtime dari Node-RED
-        response = requests.get("http://127.0.0.1:1880/api/charger/live")
+        nr_data = {}
+        try:
+            response = requests.get("http://127.0.0.1:1880/api/charger/live", timeout=2)
+            if response.status_code == 200:
+                nr_data = response.json()
+        except Exception:
+            pass
 
-        if response.status_code == 200:
-            nr_data = response.json()
-            
-            # 2. SINKRONISASI: Update data Node-RED ke SQLite biar kWh & History jalan
-            db_data = update_live_from_payload(nr_data)
-            
-            # 3. Gabungin data Node-RED dengan hasil hitungan DB (kWh & Biaya)
-            nr_data["cycle_energy_kwh"] = db_data.get("cycle_energy_kwh", 0)
-            nr_data["cycle_cost_rp"] = db_data.get("cycle_cost_rp", 0)
-            nr_data["cycle_cost_text"] = db_data.get("cycle_cost_text", "Rp 0")
-            nr_data["timestamp"] = db_data.get("last_update", now_str())
-            
-            return jsonify(nr_data)
-
-        return jsonify({
-            "error": "Node-RED API gagal"
-        }), 500
+        nr_data["user_id"] = user_id
+        db_data = update_live_from_payload(nr_data, user_id=user_id)
+        return jsonify(db_data)
 
     except Exception as e:
-        return jsonify({
-            "error": str(e)
-        }), 500
+        return jsonify({"error": str(e)}), 500
 
 
 @app.route("/api/history")
@@ -642,11 +670,13 @@ def api_history():
 
 @app.route("/api/summary")
 def api_summary():
-    return jsonify(get_summary_data())
+    role = session.get("role")
+    user_id = session.get("user_id")
+    return jsonify(get_summary_data(role=role, user_id=user_id))
+
 
 @app.route("/api/export/csv")
 def api_export_csv():
-
     selected_date = request.args.get("date")
     role = session.get("role")
     user_id = session.get("user_id")
@@ -697,7 +727,6 @@ def api_export_csv():
     conn.close()
 
     output = io.StringIO()
-
     writer = csv.writer(output)
 
     writer.writerow([
@@ -727,15 +756,12 @@ def api_export_csv():
     )
 
     filename = "riwayat_charging.csv"
-
     if selected_date:
         filename = f"riwayat_charging_{selected_date}.csv"
 
-    response.headers[
-        "Content-Disposition"
-    ] = f"attachment; filename={filename}"
-
+    response.headers["Content-Disposition"] = f"attachment; filename={filename}"
     return response
+
 
 # =========================
 # API INPUT DARI NODE-RED
@@ -744,8 +770,8 @@ def api_export_csv():
 @app.route("/api/ingest", methods=["POST"])
 def api_ingest():
     payload = request.get_json(silent=True) or {}
-
-    data = update_live_from_payload(payload)
+    user_id = payload.get("user_id") or session.get("user_id")
+    data = update_live_from_payload(payload, user_id=user_id)
 
     return jsonify({
         "ok": True,
@@ -762,26 +788,56 @@ def api_ingest():
 @login_required
 def api_control():
     payload = request.get_json(silent=True) or {}
-    
+    user_id = session.get("user_id")
     action = payload.get("action")
+
+    old_state = get_live_state(user_id=user_id)
+
     if action == "start":
-        payload["user_id"] = session.get("user_id")
-        # Ensure we set user_id in live_state directly
-        update_live_from_payload({"status": "charging", "user_id": session.get("user_id")})
+        current_lvl = safe_float(old_state.get("level_percent", 20.0))
+        if current_lvl >= 100:
+            current_lvl = 15.0
 
+        update_live_from_payload({
+            "status": "charging",
+            "level_percent": current_lvl,
+            "user_id": user_id
+        }, user_id=user_id)
+
+    elif action == "pause":
+        update_live_from_payload({
+            "status": "paused",
+            "charger_power_kw": 0.0,
+            "user_id": user_id
+        }, user_id=user_id)
+
+    elif action == "reset":
+        conn = db_conn()
+        cur = conn.cursor()
+        cur.execute("""
+            UPDATE user_live_state
+            SET status = 'idle',
+                level_percent = 15.0,
+                charger_power_kw = 0.0,
+                cycle_energy_kwh = 0.0,
+                cycle_cost_rp = 0.0,
+                cycle_started_at = ?
+            WHERE user_id = ?
+        """, (now_str(), user_id))
+        conn.commit()
+        conn.close()
+
+    # Forward to Node-RED (optional dummy signal)
     try:
-        response = requests.post(
-            "http://127.0.0.1:1880/api/charger/control",
-            json=payload
-        )
+        requests.post("http://127.0.0.1:1880/api/charger/control", json=payload, timeout=2)
+    except Exception:
+        pass
 
-        return jsonify(response.json())
-
-    except Exception as e:
-        return jsonify({
-            "ok": False,
-            "error": str(e)
-        }), 500
+    return jsonify({
+        "ok": True,
+        "action": action,
+        "status": get_live_state(user_id=user_id).get("status")
+    })
 
 
 # =========================

@@ -64,14 +64,24 @@
         </div>
       </header>
 
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+          <div class="alerts-container">
+            {% for category, message in messages %}
+              <div class="alert alert-{{ 'danger' if category == 'error' else category }}">
+                <span>{% if category in ['error', 'danger'] %}⚠️{% else %}✅{% endif %} {{ message }}</span>
+              </div>
+            {% endfor %}
+          </div>
+        {% endif %}
+      {% endwith %}
+
       <section id="page-dashboard" class="page active">
         <div class="dashboard-actions">
-            {% if session.get('role') == 'admin' %}
+            {% if session.get('user_id') %}
             <button id="btnStart" class="btn primary">Start</button>
             <button id="btnPause" class="btn">Pause</button>
             <button id="btnReset" class="btn danger">Reset</button>
-            {% else %}
-            <span class="text-muted small align-self-center">Monitoring Only</span>
             {% endif %}
         </div>
         <div class="hero-grid">

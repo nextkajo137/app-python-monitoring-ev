@@ -5,7 +5,7 @@ from datetime import datetime
 DB_PATH = os.getenv("DB_PATH", "ev_charger.db")
 
 def get_db():
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_PATH, timeout=30.0)
     conn.row_factory = sqlite3.Row
     return conn
 
@@ -26,11 +26,12 @@ def create_charging(data):
     conn = get_db()
     conn.execute("""
         INSERT INTO charging_history
-        (cycle_id, started_at, ended_at, duration_min, energy_kwh, cost_rp, status, source)
-        VALUES (?, ?, ?, ?, ?, ?, ?, 'manual')
+        (cycle_id, started_at, ended_at, duration_min, energy_kwh, cost_rp, status, source, user_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?, 'manual', ?)
     """, (
         cycle_id, data['started_at'], data.get('ended_at'),
-        data.get('duration_min'), data['energy_kwh'], data['cost_rp'], data['status']
+        data.get('duration_min'), data['energy_kwh'], data['cost_rp'], data['status'],
+        data.get('user_id')
     ))
     conn.commit()
     conn.close()
