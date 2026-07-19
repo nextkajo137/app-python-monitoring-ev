@@ -38,9 +38,7 @@
         <button class="nav-link" data-page="cost">Total Biaya Konsumsi</button>
         <button class="nav-link" data-page="kwh">Total kWh Charging</button>
         <button class="nav-link" data-page="profile">Profil</button>
-        {% if session.get('role') in ['admin', 'superadmin'] %}
-        <button class="nav-link" data-page="users">Kontrol User</button>
-        {% endif %}
+        <a href="{{ url_for('users.control') }}" class="nav-link" style="text-decoration:none; display:block; text-align:left; color:inherit;">Kontrol User</a>
       </nav>
 
       <div class="node-card">
@@ -168,12 +166,8 @@
             <table>
               <thead>
                 <tr>
+                  <th>Username / ID User</th>
                   <th>ID Siklus</th>
-                  <th>Mulai</th>
-                  <th>Selesai</th>
-                  <th>Durasi</th>
-                  <th>Energi</th>
-                  <th>Biaya</th>
                   <th>Status</th>
                   <th>Aksi</th>
                 </tr>
@@ -425,7 +419,26 @@
     </div>
   </div>
 
- <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+  <div id="historyDetailModal" class="modal-overlay">
+    <div class="modal-box glass">
+      <div class="modal-head">
+        <h3>Detail Riwayat Charging</h3>
+        <button type="button" class="modal-close" id="btnCloseDetailModal">&times;</button>
+      </div>
+      <div style="padding: 20px 0;">
+        <p><strong>Waktu Mulai:</strong> <span id="detailStartedAt"></span></p>
+        <p><strong>Waktu Selesai:</strong> <span id="detailEndedAt"></span></p>
+        <p><strong>Durasi:</strong> <span id="detailDuration"></span></p>
+        <p><strong>Energi (kWh):</strong> <span id="detailEnergy"></span></p>
+        <p><strong>Biaya (Rp):</strong> <span id="detailCost"></span></p>
+      </div>
+      <div class="modal-foot">
+        <button type="button" class="btn" id="btnCancelDetailModal">Tutup</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="{{ url_for('static', filename='js/app.js') }}"></script>
 
 </body>
 </html>

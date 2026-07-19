@@ -449,6 +449,7 @@ def get_history_items(role=None, user_id=None) -> List[Dict[str, Any]]:
         items.append({
             "id": None,
             "cycle_id": "CHG-ACTIVE",
+            "username": "Sistem (Live)",
             "started_at": live.get("cycle_started_at", "-"),
             "ended_at": "Sedang Berjalan",
             "duration_min": duration_active,
@@ -464,43 +465,49 @@ def get_history_items(role=None, user_id=None) -> List[Dict[str, Any]]:
     if role == "user" and user_id is not None:
         cur.execute("""
             SELECT
-                id,
-                cycle_id,
-                started_at,
-                ended_at,
-                duration_min,
-                energy_kwh,
-                cost_rp,
-                status,
-                source,
-                user_id
-            FROM charging_history
-            WHERE user_id = ?
-            ORDER BY id DESC
+                h.id,
+                h.cycle_id,
+                h.started_at,
+                h.ended_at,
+                h.duration_min,
+                h.energy_kwh,
+                h.cost_rp,
+                h.status,
+                h.source,
+                h.user_id,
+                u.username
+            FROM charging_history h
+            LEFT JOIN users u ON h.user_id = u.id
+            WHERE h.user_id = ?
+            ORDER BY h.id DESC
             LIMIT 50
         """, (user_id,))
     else:
         cur.execute("""
             SELECT
-                id,
-                cycle_id,
-                started_at,
-                ended_at,
-                duration_min,
-                energy_kwh,
-                cost_rp,
-                status,
-                source,
-                user_id
-            FROM charging_history
-            ORDER BY id DESC
+                h.id,
+                h.cycle_id,
+                h.started_at,
+                h.ended_at,
+                h.duration_min,
+                h.energy_kwh,
+                h.cost_rp,
+                h.status,
+                h.source,
+                h.user_id,
+                u.username
+            FROM charging_history h
+            LEFT JOIN users u ON h.user_id = u.id
+            ORDER BY h.id DESC
             LIMIT 50
         """)
     rows = cur.fetchall()
     conn.close()
 
     for row in rows:
-        items.append(dict(row))
+        item = dict(row)
+        item["username"] = row["username"] if row["username"] else "Tanpa User"
+        items.append(item)
 
     return items
 
@@ -894,6 +901,10 @@ def forbidden(e):
 @app.errorhandler(401)
 def unauthorized(e):
     return render_template("errors/403.html"), 401
+
+@app.errorhandler(500)
+def internal_error(e):
+    return render_template("errors/500.html"), 500
 
 if __name__ == "__main__":
     app.run(host=APP_HOST, port=APP_PORT, debug=True)
