@@ -1,6 +1,6 @@
 import sqlite3
 from functools import wraps
-from flask import Blueprint, render_template, request, redirect, url_for, flash, session
+from flask import Blueprint, render_template, request, redirect, url_for, flash, session, abort
 from werkzeug.security import generate_password_hash, check_password_hash
 import os
 
@@ -29,8 +29,7 @@ def admin_required(f):
             flash("Silakan login terlebih dahulu.", "error")
             return redirect(url_for("auth.login"))
         if session.get("role") not in ["admin", "superadmin"]:
-            flash("Anda tidak memiliki akses (Admin only).", "error")
-            return redirect(url_for("index"))
+            abort(403)
         return f(*args, **kwargs)
     return decorated_function
 
@@ -41,8 +40,7 @@ def superadmin_required(f):
             flash("Silakan login terlebih dahulu.", "error")
             return redirect(url_for("auth.login"))
         if session.get("role") != "superadmin":
-            flash("Anda tidak memiliki akses (Superadmin only).", "error")
-            return redirect(url_for("index"))
+            abort(403)
         return f(*args, **kwargs)
     return decorated_function
 

@@ -839,5 +839,11 @@ def forbidden(e):
 def unauthorized(e):
     return render_template("errors/403.html"), 401
 
+
+@app.errorhandler(500)
+def internal_error(e):
+    return render_template("errors/500.html"), 500
+
+
 if __name__ == "__main__":
     app.run(host=APP_HOST, port=APP_PORT, debug=True)
