@@ -4,4 +4,4 @@ __pycache__/
 .env
 instance/
 .pytest_cache/
-*.pyc
+*.pycev_charger.db
