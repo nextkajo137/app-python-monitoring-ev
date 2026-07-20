@@ -1,4 +1,4 @@
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, session
 from datetime import datetime
 from models.charging import (
     get_charging_by_id, create_charging, update_charging, delete_charging
@@ -53,7 +53,8 @@ def add_charging():
         'duration_min': compute_duration(started_at, ended_at),
         'energy_kwh': float(payload.get('energy_kwh') or 0),
         'cost_rp': float(payload.get('cost_rp') or 0),
-        'status': payload.get('status', 'completed')
+        'status': payload.get('status', 'completed'),
+        'user_id': session.get('user_id')
     }
     create_charging(form_data)
     return jsonify({"ok": True, "message": "Data charging manual berhasil ditambahkan"})

@@ -9,7 +9,7 @@ auth_bp = Blueprint("auth", __name__)
 DB_PATH = os.getenv("DB_PATH", "ev_charger.db")
 
 def db_conn():
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_PATH, timeout=30.0)
     conn.row_factory = sqlite3.Row
     return conn
 

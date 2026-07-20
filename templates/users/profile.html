@@ -1,42 +1,49 @@
 {% extends "base.html" %}
 {% block title %}Profil Saya - EV Charger Monitoring{% endblock %}
+{% block page_title %}Profil Saya{% endblock %}
 {% block content %}
-<div class="row mt-4 justify-content-center">
-    <div class="col-md-6">
-        <div class="card shadow-lg border-info" style="background: rgba(10, 20, 36, 0.68); backdrop-filter: blur(10px);">
-            <div class="card-header border-info bg-transparent">
-                <h4 class="mb-0 text-info">Pengaturan Profil</h4>
-            </div>
-            <div class="card-body text-light">
-                <form method="POST" action="{{ url_for('profile.index') }}">
-                    <div class="mb-3">
-                        <label class="form-label text-muted">Role Akses</label>
-                        <input type="text" class="form-control bg-dark text-secondary border-secondary" value="{{ user.role|title }}" disabled>
-                    </div>
-                    <div class="mb-3">
-                        <label for="username" class="form-label">Username</label>
-                        <input type="text" class="form-control bg-dark text-light border-secondary" id="username" name="username" value="{{ user.username }}" required>
-                    </div>
-                    <hr class="border-secondary my-4">
-                    <h5 class="text-info mb-3">Ubah Password <small class="text-muted" style="font-size: 0.8rem;">(Opsional)</small></h5>
-                    <div class="mb-3">
-                        <label for="current_password" class="form-label">Password Saat Ini <span class="text-danger">*</span></label>
-                        <input type="password" class="form-control bg-dark text-light border-secondary" id="current_password" name="current_password" required placeholder="Wajib diisi untuk menyimpan perubahan">
-                    </div>
-                    <div class="mb-3">
-                        <label for="new_password" class="form-label">Password Baru</label>
-                        <input type="password" class="form-control bg-dark text-light border-secondary" id="new_password" name="new_password" placeholder="Kosongkan jika tidak ingin ganti">
-                    </div>
-                    <div class="mb-4">
-                        <label for="confirm_password" class="form-label">Konfirmasi Password Baru</label>
-                        <input type="password" class="form-control bg-dark text-light border-secondary" id="confirm_password" name="confirm_password" placeholder="Kosongkan jika tidak ingin ganti">
-                    </div>
-                    <div class="d-grid">
-                        <button type="submit" class="btn btn-info fw-bold">Simpan Perubahan</button>
-                    </div>
-                </form>
-            </div>
-        </div>
+
+<div class="glass table-card" style="max-width: 560px; margin: 0 auto;">
+  <div class="section-head">
+    <div>
+      <p class="eyebrow">Pengaturan Akun</p>
+      <h3>Profil Saya</h3>
     </div>
+  </div>
+
+  <form method="POST" action="{{ url_for('profile.index') }}" style="margin-top: 20px;">
+    <div class="form-group">
+      <label>Role Akses</label>
+      <input type="text" value="{{ user.role|title }}" disabled style="opacity: 0.6; cursor: not-allowed;">
+    </div>
+
+    <div class="form-group">
+      <label>Username</label>
+      <input type="text" id="username" name="username" value="{{ user.username }}" required>
+    </div>
+
+    <hr style="border-color: rgba(148,233,255,.12); margin: 24px 0;">
+
+    <h5 style="color: var(--cyan); margin-bottom: 16px; font-size: 15px;">
+      Ubah Password <span style="color: var(--muted); font-size: 12px; font-weight: 400;">(Opsional)</span>
+    </h5>
+
+    <div class="form-group">
+      <label>Password Saat Ini <span style="color: var(--red);">*</span></label>
+      <input type="password" id="current_password" name="current_password" required placeholder="Wajib diisi untuk menyimpan perubahan">
+    </div>
+
+    <div class="form-group">
+      <label>Password Baru</label>
+      <input type="password" id="new_password" name="new_password" placeholder="Kosongkan jika tidak ingin ganti">
+    </div>
+
+    <div class="form-group">
+      <label>Konfirmasi Password Baru</label>
+      <input type="password" id="confirm_password" name="confirm_password" placeholder="Kosongkan jika tidak ingin ganti">
+    </div>
+
+    <button type="submit" class="btn primary" style="width: 100%; margin-top: 8px;">Simpan Perubahan</button>
+  </form>
 </div>
 {% endblock %}

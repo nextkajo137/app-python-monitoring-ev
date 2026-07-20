@@ -180,28 +180,29 @@ function renderLive(data) {
 let allHistory = [];
 function renderHistory(items) {
   if (!items || !items.length) {
-    els.historyTable.innerHTML = '<tr><td colspan="8">Belum ada data riwayat.</td></tr>';
+    els.historyTable.innerHTML = '<tr><td colspan="4" style="text-align:center;">Belum ada data riwayat.</td></tr>';
     return;
   }
 
   els.historyTable.innerHTML = items.map(item => {
     const isManual = item.source === 'manual';
+    const detailId = item.id ? item.id : `'${item.cycle_id}'`;
+    
+    let actions = `<button type="button" class="btn-mini" style="margin-right: 4px;" onclick="openDetailModal(${detailId})">Detail</button>`;
 
-    const actions = isManual
-      ? `<button type="button" class="btn-mini" onclick="openEditModal(${item.id})">Edit</button>
-         <button type="button" class="btn-mini btn-mini-danger" onclick="hapusManual(${item.id})">Hapus</button>`
-      : '<span class="badge-auto">Otomatis</span>';
+    if (isManual) {
+        actions += `<button type="button" class="btn-mini" onclick="openEditModal(${item.id})">Edit</button>
+         <button type="button" class="btn-mini btn-mini-danger" onclick="hapusManual(${item.id})">Hapus</button>`;
+    } else {
+        actions += `<span class="badge-auto" style="margin-left: 4px;">Otomatis</span>`;
+    }
 
     return `
       <tr>
+        <td>${item.username || '<span style="color:#666; font-style:italic;">Data Lama</span>'}</td>
         <td>${item.cycle_id || '-'}</td>
-        <td>${item.started_at || '-'}</td>
-        <td>${item.ended_at || '-'}</td>
-        <td>${item.duration_min ?? 0} menit</td>
-        <td>${Number(item.energy_kwh || 0).toFixed(3)} kWh</td>
-        <td>${fmtRp.format(Number(item.cost_rp || 0))}</td>
         <td><span class="status-pill">${item.status || '-'}</span></td>
-        <td>${actions}</td>
+        <td><div style="display: flex; gap: 4px; align-items: center;">${actions}</div></td>
       </tr>
     `;
   }).join('');
@@ -328,8 +329,11 @@ function downloadCSVReport() {
 }
 
 document.querySelectorAll('.nav-link').forEach(btn => {
+  if (btn.tagName === 'A') return;
   btn.addEventListener('click', () => {
-    document.querySelectorAll('.nav-link').forEach(x => x.classList.remove('active'));
+    document.querySelectorAll('.nav-link').forEach(x => {
+        if(x.tagName !== 'A') x.classList.remove('active');
+    });
     document.querySelectorAll('.page').forEach(x => x.classList.remove('active'));
 
     btn.classList.add('active');
@@ -459,6 +463,26 @@ document.getElementById('formEndedAt').addEventListener('change', updateDuration
 document.getElementById('btnAddManual').addEventListener('click', openAddModal);
 document.getElementById('btnCloseModal').addEventListener('click', closeChargingModal);
 document.getElementById('btnCancelModal').addEventListener('click', closeChargingModal);
+
+function openDetailModal(idOrCycleId) {
+    const item = allHistory.find(i => i.id == idOrCycleId || i.cycle_id == idOrCycleId);
+    if(!item) return;
+    
+    document.getElementById('detailStartedAt').textContent = item.started_at || '-';
+    document.getElementById('detailEndedAt').textContent = item.ended_at || '-';
+    document.getElementById('detailDuration').textContent = (item.duration_min ?? 0) + ' menit';
+    document.getElementById('detailEnergy').textContent = Number(item.energy_kwh || 0).toFixed(4) + ' kWh';
+    document.getElementById('detailCost').textContent = fmtRp.format(Number(item.cost_rp || 0));
+    
+    document.getElementById('historyDetailModal').classList.add('active');
+}
+
+function closeDetailModal() {
+    document.getElementById('historyDetailModal').classList.remove('active');
+}
+
+document.getElementById('btnCloseDetailModal')?.addEventListener('click', closeDetailModal);
+document.getElementById('btnCancelDetailModal')?.addEventListener('click', closeDetailModal);
 
 chargingForm.addEventListener('submit', async (e) => {
   e.preventDefault();

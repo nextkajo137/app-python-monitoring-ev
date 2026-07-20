@@ -20,14 +20,24 @@ def index():
         
         cur.execute("SELECT * FROM users WHERE id = ?", (user_id,))
         user = cur.fetchone()
+
+        if not current_password:
+            flash("Password saat ini wajib diisi untuk mengonfirmasi perubahan.", "error")
+            conn.close()
+            return redirect(url_for("index", tab="profile"))
         
         if not check_password_hash(user["password_hash"], current_password):
             flash("Password saat ini salah.", "error")
             conn.close()
             return redirect(url_for("index", tab="profile"))
+
+        if not new_username:
+            flash("Username tidak boleh kosong.", "error")
+            conn.close()
+            return redirect(url_for("index", tab="profile"))
             
         # Check username uniqueness if changed
-        if new_username and new_username != user["username"]:
+        if new_username != user["username"]:
             cur.execute("SELECT id FROM users WHERE username = ? AND id != ?", (new_username, user_id))
             if cur.fetchone():
                 flash("Username sudah digunakan orang lain.", "error")
@@ -40,6 +50,11 @@ def index():
             
         # Update password if provided
         if new_password:
+            if len(new_password) < 6:
+                flash("Password baru minimal 6 karakter.", "error")
+                conn.close()
+                return redirect(url_for("index", tab="profile"))
+
             if new_password != confirm_password:
                 flash("Konfirmasi password baru tidak cocok.", "error")
                 conn.close()
